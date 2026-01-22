@@ -1,0 +1,192 @@
+
+# Exploring FLMA (all protections data)
+2026 Jan 22
+Ryan Anderson
+
+
+The purpose of this notebook is to look for overall patterns in the "status-quo" of land protection
+We will be looking at the FLMA Dec2025 dataset, which includes all land protections in Florida up to December 2025.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load-packages}
+library(tidyverse)
+library(here)
+library(janitor)
+```
+
+```{r}
+# Load the FLMA Dec2025 dataset
+# data_raw/FNAI_Spatial_Data_Attr_Tables/flma_2025_12.csv
+flma_data <- read_csv(here("data_raw", "FNAI_Spatial_Data_Attr_Tables", "flma_2025_12.csv")) %>%
+  clean_names()
+```
+## Key Fields of Interest
+
+Here are some fields that will be useful for us
+
+- totacres -- total acres
+- matype -- it's an acronym, first 2 letters are a managing agency, and then the next 2 letters indicate some sort of type. A consistent feature is the use of CE at the end for "Conservation Easement", but there are other types of easements besides conservation easements. (e.g. Regulatory Easements)
+- matype2 -- a shorter and simplified version of the manager type -- Private, Local, State, Federal
+- esmt_hold -- says the holder esmt name. Is set to ZZ if no easement holder. But an organization in this name might not necessarily imply an easement, For example, Fish and Wildlife Refuge will have the easement holder field set to Fish and Wildlife. It. must be double checked as to whether this type of refuge is an easement or fee simple.
+--- this is the description of the field: "Easement Holder. Entity that holds title to the easement on the property." (so perhaps this does comprehensively cover all easements)
+
+## Visualizing Area Distribution
+
+One initial hypothesis we had was that protection tends to either occur in really big chunks or in the assembling of many tiny chunks. We might not yet have access to how protected areas changed over time, but we can get some hints to this if we visualize the distribution of the existing data.
+
+Let's create a histogram to see total acres
+
+```{r}
+ggplot(flma_data, aes(x = totacres)) +
+  geom_histogram() +
+  scale_x_log10() +
+  labs(
+    title = "Distribution of Protected Area Sizes in Florida (FLMA Dec2025)",
+    x = "Total Acres (log scale)",
+    y = "Count of Protected Areas"
+  ) +
+  theme_minimal()
+```
+
+
+Now let's do this again, but let's stack bars by simplified manager type (matype2)
+```{r}
+ggplot(flma_data, aes(x = totacres, fill = matype2)) +
+  geom_histogram() +
+  scale_x_log10() +
+  labs(
+    title = "Distribution of Protected Area Sizes in Florida by Manager Type (FLMA Dec2025)",
+    x = "Total Acres (log scale)",
+    y = "Count of Protected Areas",
+    fill = "Manager Type"
+  ) +
+  theme_minimal()
+```
+
+Fascinating indeed, now let's see how these look if we facet_wrap by manager type.
+Let's keep the same color coding.
+
+```{r}
+ggplot(flma_data, aes(x = totacres, fill = matype2)) +
+  geom_histogram() +
+  scale_x_log10() +
+  labs(
+    title = "Distribution of Protected Area Sizes in Florida by Manager Type (FLMA Dec2025)",
+    x = "Total Acres (log scale)",
+    y = "Count of Protected Areas",
+    fill = "Manager Type"
+  ) +
+  theme_minimal() +
+  facet_wrap(~ matype2)
+```
+
+Ok this is pretty neat. I was expecting that we'd see some bimodality in these distributions, especially with megaparcel projects. I was expecting to see some spikes in frequency in the really tiny parcels. Quick sanity check, do the megaparcel projects even exist inside the FLMA dataset?
+
+Ok double checked, turns out that yes they are included, BUT they lump all the disjunct parcels together into a single object.
+
+Notably: the description contains the word "disjunct" as do a number of other parcels. So it seems that FNAI may have been consistent in using this term. Sometimes they say "two or three disjunct" and sometimes "many" or "several disjunct".
+
+So without using GIS software, is it possible to use these descriptions?
+
+But before we do that, I quickly want to see a pi chart of area by manager type to compare with the parcel counts visualization.
+
+```{r}
+area_by_manager <- flma_data %>%
+  group_by(matype2) %>%
+  summarize(total_area = sum(totacres, na.rm = TRUE))
+
+ggplot(area_by_manager, aes(x = "", y = total_area, fill = matype2)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) +
+  labs(
+    title = "Proportion of Total Protected Area by Manager Type (FLMA Dec2025)",
+    fill = "Manager Type"
+  ) +
+  theme_minimal()
+```
+
+So this really helps you remember that those right tails on our lognormal distribution really have a huge effect on the total land area.
+
+
+## Looking at Disjunct-ness (finding megaparcels)
+
+Let's see if FNAI has used some consistent verbage here with disjunct protected areas. 
+To do so we can filter to get all areas containing "disjunct" in the description.
+From there, we do a frequency analysis to look for words relating to quantity. Maybe we can get a catalog of terms they used in that way.
+
+Maybe a word cloud?
+
+```{r}
+library(tidytext)
+
+disjunct_areas <- flma_data %>%
+  filter(str_detect(descript, regex("disjunct", ignore_case = TRUE)))
+
+# Tokenize the descriptions into words
+word_counts <- disjunct_areas %>%
+  unnest_tokens(word, descript) %>%
+  count(word, sort = TRUE)
+
+# Remove words like "the", "and", etc. using stop words
+data("stop_words")
+word_counts_clean <- word_counts %>%
+  anti_join(stop_words, by = "word")
+
+# let's also remove 'disjunct' since that's what we queried for anyways
+word_counts_clean <- word_counts_clean %>%
+  filter(word != "disjunct")
+
+```
+
+Word Cloud Time!
+
+```{r}
+library(wordcloud)
+set.seed(1234) # For reproducibility
+wordcloud(words = word_counts_clean$word, freq = word_counts_clean$n, min.freq = 1,
+          max.words=100, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+```
+
+Now I'm curious and want to look at the word cloud for parcels that do NOT contain "disjunct" in the description. Are there any differences that jump out?
+```{r}
+non_disjunct_areas <- flma_data %>%
+  filter(!str_detect(descript, regex("disjunct", ignore_case = TRUE)))
+
+# Tokenize the descriptions into words
+word_counts_non_disjunct <- non_disjunct_areas %>%
+  unnest_tokens(word, descript) %>%
+  count(word, sort = TRUE)
+
+# Remove words like "the", "and", etc. using stop words
+word_counts_non_disjunct_clean <- word_counts_non_disjunct %>%
+  anti_join(stop_words, by = "word")
+
+# Word Cloud!
+set.seed(1234) # For reproducibility
+wordcloud(words = word_counts_non_disjunct_clean$word, freq = word_counts_non_disjunct_clean$n, min.freq = 1,
+          max.words=100, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+```
+
+Ok, kinda neat. One thing to note is that there are only 32 PA's containing the word 'disjunct' so maybe this isn't comprehensive. Maybe some disjunct areas don't say 'disjunct' in their description.
+
+Take "Valkaria Expansion" in Brevard county as an example, its description is "Many parcels of mesic/wet flatwoods, cypress, marsh and other natural communities." The adjacent Valkaria Scrub Sanctuary, also very much a mega-parcel-y reads "Sand pine scrub, oak scrub, scrubby flatwoods, depression marsh, and creek system. Important habitat for Florida scrub-jay and other scrub species." -- so no words thath can give us clues as to its being a megaparcel project.
+
+
+Some areas like bombing range ridge are also not disjunct, but just have a bunch of in-holding (holes in the middle). Bombing range ridge is also a good example of a site with minimal description: "All less-than-fee." (That's it, that's the description).
+
+
+So at the end of the day,  I think this we'll either need to label megaparcel projects by hand, or come up with a more strict geoprocessing criterion
+
+
+In any case we'll need to come up with a rigorous criterion since there are some bizarre cases:
+
+
+Take Shingle Creek in Orange and Osceola counties as an example: half of it is a single contiguous protected area and the other half is a patchwork of rectangles that looks like megaparcel projects.
+
+
+And then there are cases like The Jahna Ranch Conservation Easement in Polk County, where the PAs are shaped around the specific natural area (in this case, the patches of forest), so in this sense you have technically disjunct parcels, but perhaps lacking the same level of disruption as a real estate area being slowly bought out. The ranch lands after all are not included within the bounds of the easements, that being said there might not be the same amount of disruption as houses.
