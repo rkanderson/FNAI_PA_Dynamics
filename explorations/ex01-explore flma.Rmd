@@ -12,6 +12,8 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r load-packages}
+rm(list = ls())
+
 library(tidyverse)
 library(here)
 library(janitor)
