@@ -1,0 +1,200 @@
+
+## Florida Forever Land Accumulation
+
+The purpose of this notebook is to visualize accumulation of protected land over time for different Florida Forever projects.
+We have a dataset of projects, and a dataset of acquisitions. What do the patterns look like?
+
+I will be using the attribute tables extracted, so no specific polygon geometries. So the overlap might not be perfect. Let's see how much mileage we can get out of this technique
+
+
+
+
+```{r}
+rm(list=ls())
+
+# Load libraries
+library(tidyverse)
+library(here)
+library(janitor)
+```
+
+```{r}
+# Load the Florida Forever Projects datasets
+# data_raw/FNAI_Spatial_Data_Attr_Tables/ff_acquired_2025_09.csv
+# data_raw/FNAI_Spatial_Data_Attr_Tables/ffbot_2025_12.csv
+
+ff_acquisitions <- read_csv(here("data_raw", "FNAI_Spatial_Data_Attr_Tables", "ff_acquired_2025_09.csv")) %>%
+  clean_names()
+
+ff_projects <- read_csv(here("data_raw", "FNAI_Spatial_Data_Attr_Tables", "ffbot_2025_12.csv")) %>%
+  clean_names()
+
+
+```
+
+Some useful columns
+
+ff_acquisitions
+- county
+- close_date
+- prj_name - The name of the project of which the parcel is a part, as reported by either the purchasing agency or the Division of State Lands. e.g. "FFS/Withlacoochee State Forest", "Annutteliga Hammock",
+- acres -- GIS Calculated area in acres
+-  Total area of the parcel purchased, in acres.
+- ff_ac_pur -- Total area of the parcel purchased, in acres (often slightly different from the total calculated area)
+- ma_id -- Managed Area ID. The code of the managed area in the FNAI FLMA data layer of which the parcel is a part. The code is a numeric identifier, designed by NatureServe, for use with the BIOTICS Tracker data management system. If the parcel has yet to be assigned to a managed area, the field is coded as "-999."
+
+
+ff_projects
+- prisec_acres -- Area of the Florida Forever BOT project site, in acres. This figure was obtained from the FL DEP Office of Environmental Services and is based on deed acres from plat maps or tax roll records, unless otherwise noted in SITECOM.
+- gis_acres --GIS calculated area
+- site_id -- Unique numeric identifier for each site, designed by NatureServe for use with the BIOTICS data management system.
+- project_cd -- Project code. Unique identifier for each Florida Forever BOT project. All sites within a project have the same Project code.
+- sitename: Site name. The name of the Florida Forever BOT project, or portion of the project, represented by the site. For Florida Forever BOT projects that are composed of multiple sites (e.g., Dade County Archipelago Florida Forever BOT Project), the SITENAME for each site begins with the name of the project, and this is followed by the name of the particular site within the project (e.g., Dade County Archipelago Florida Forever BOT Project - Whispering Pines).
+- project_name -- Project name. The name of the Florida Forever BOT project.
+
+
+
+If we want to visualize how FF acquisition areas change over time within a given FF BOT project, we need some way to associate an acquisition with a project. This is looking possibly harder than it would have seen. The only identifier I can see that might be a successful link is prj_name, but this needs to be verified as a reliable linker.
+
+## Looking into using prj_name as a link
+
+So let's get a handful of prj_name values from ff_acquisitions and see if they can be found in ff_projects
+
+```{r}
+sample_prj_names <- ff_acquisitions %>%
+  distinct(prj_name) %>%
+  slice_sample(n = 50) %>%
+  pull(prj_name)
+
+sample_prj_names
+```
+
+```{r}
+# Check if these prj_name values exist in ff_projects$project_name
+matching_projects <- ff_projects %>%
+  filter(project_name %in% sample_prj_names)
+
+matching_projects
+```
+So it looks like when you filter them directly you get zero results. Indeed often these project names don't coincide with the FF BOT projects, they are bought using FF funding, but for difefrent purposes. 
+
+To truly quantify accumulation of protected areas within the FF BOT bounds, we will need to do a spatial join.
+
+For now though, we can visualize protected land acquisitions over time by florida counties.
+
+## Visualizing accumaliton of protected land by county
+
+```{r}
+ff_acquisitions_clean_date <- ff_acquisitions %>%
+  mutate(close_date = as.Date(close_date, format="%m/%d/%Y"),
+         year = lubridate::year(close_date)) %>%
+  filter(!is.na(year))
+
+# Summarize total acres acquired per year per county
+acres_by_year_county <- ff_acquisitions_clean_date %>%
+  group_by(county, year) %>%
+  summarize(total_acres = sum(acres, na.rm = TRUE)) %>%
+  ungroup()
+
+```
+
+There are over 80 counties, so plotting all of them will be overwhelming. Let's filter to the top 5 counties by total acres acquired over the entire period.
+
+```{r}
+top_counties <- acres_by_year_county %>%
+  group_by(county) %>%
+  summarize(overall_acres = sum(total_acres, na.rm = TRUE)) %>%
+  arrange(desc(overall_acres)) %>%
+  slice_head(n = 5) %>%
+  pull(county)
+```
+
+```{r}
+# Filter to top counties
+acres_top_counties <- acres_by_year_county %>%
+  filter(county %in% top_counties)
+# Plot accumulation over time for top counties
+# log scale on the y
+ggplot(acres_top_counties, aes(x = year, y = total_acres, color = county)) +
+  geom_line(size = 1) +
+  geom_point() +
+  scale_y_log10() +
+  facet_wrap(~county) +
+  labs(
+    title = "Annual Florida Forever Land Acquisitions by County",
+    x = "Year",
+    y = "Total Acres Acquired",
+    color = "County"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+
+To get more information, we can do some further aggregation by dividing up the 80 or so counties into a set of larger regions.
+Like Northwest, North Central, Northeast, Tampa Bay, East Central, South Central, Southwest, Southeast.
+
+I created a dataset of county to region mapping manually as a CSV. Let's import it
+
+```{r}
+# data_raw/Supplemental/fl_counties_regions.csv
+fl_county_regions <- read_csv(here("data_raw", "Supplemental", "fl_counties_regions.csv")) %>%
+  clean_names()
+
+# Fields: county, region
+```
+
+Now let's get the total acres acquired per year per region.
+Note that some of the county field values are 2 or more counties separated by commas and spaces
+For this analysis I'll have the analysis create a data point for each of the counties involved.
+
+
+
+```{r}
+acres_by_year_region <- ff_acquisitions_clean_date %>%
+  separate_rows(county, sep = ", ") %>%
+  left_join(fl_county_regions, by = "county") %>%
+  group_by(region, year) %>%
+  summarize(total_acres = sum(acres, na.rm = TRUE)) %>%
+  ungroup()
+
+# Plot accumulation over time for regions
+ggplot(acres_by_year_region, aes(x = year, y = total_acres, color = region)) +
+  geom_line(size = 1) +
+  geom_point() +
+  scale_y_log10() +
+  facet_wrap(~region) +
+  labs(
+    title = "Annual Florida Forever Land Acquisitions by Region",
+    x = "Year",
+    y = "Total Acres Acquired",
+    color = "Region"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+
+Now let's see what the curves look like when we make them cumulative.
+Let's compute a cumulative_total_acres field
+
+```{r}
+acres_by_year_region_cumulative <- acres_by_year_region %>%
+  group_by(region) %>%
+  arrange(year) %>%
+  mutate(cumulative_total_acres = cumsum(total_acres)) %>%
+  ungroup()
+
+# Plot cumulative acquisition over time for regions
+ggplot(acres_by_year_region_cumulative, aes(x = year, y = cumulative_total_acres, color = region)) +
+  geom_line(size = 1) +
+  facet_wrap(~region) +
+  labs(
+    title = "Cumulative Florida Forever Land Acquisitions by Region",
+    x = "Year",
+    y = "Cumulative Acres Acquired",
+    color = "Region"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
