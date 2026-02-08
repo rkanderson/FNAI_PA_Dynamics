@@ -85,6 +85,8 @@ ggplot(flma_data, aes(x = totacres, fill = matype2)) +
   facet_wrap(~ matype2)
 ```
 
+*NOTE*: Must be clear when presenting this to define what a PA is.
+
 Ok this is pretty neat. I was expecting that we'd see some bimodality in these distributions, especially with megaparcel projects. I was expecting to see some spikes in frequency in the really tiny parcels. Quick sanity check, do the megaparcel projects even exist inside the FLMA dataset?
 
 Ok double checked, turns out that yes they are included, BUT they lump all the disjunct parcels together into a single object.
@@ -109,6 +111,8 @@ ggplot(area_by_manager, aes(x = "", y = total_area, fill = matype2)) +
   ) +
   theme_minimal()
 ```
+
+*NOTE* This is just a snapshot, some of the hectares move around over time (e.g. Private lands getting into federal or state). 
 
 So this really helps you remember that those right tails on our lognormal distribution really have a huge effect on the total land area.
 
@@ -192,3 +196,76 @@ Take Shingle Creek in Orange and Osceola counties as an example: half of it is a
 
 
 And then there are cases like The Jahna Ranch Conservation Easement in Polk County, where the PAs are shaped around the specific natural area (in this case, the patches of forest), so in this sense you have technically disjunct parcels, but perhaps lacking the same level of disruption as a real estate area being slowly bought out. The ranch lands after all are not included within the bounds of the easements, that being said there might not be the same amount of disruption as houses.
+
+
+Question: Are disjunct parcels more commonly easements?
+
+Let's filter disjunct and non_disjunct parcels respectively to find proportion of land parcels that are easements.
+
+To do so, let's define easements as those with matype ending in "CE" (conservation easement).
+
+```{r}
+disjunct_easement_stats <- disjunct_areas %>%
+  mutate(is_easement = str_ends(matype, "CE")) %>%
+  summarize(
+    total_disjunct = n(),
+    easement_count = sum(is_easement),
+    easement_proportion = easement_count / total_disjunct
+  )
+
+non_disjunct_easement_stats <- non_disjunct_areas %>%
+  mutate(is_easement = str_ends(matype, "CE")) %>%
+  summarize(
+    total_non_disjunct = n(),
+    easement_count = sum(is_easement),
+    easement_proportion = easement_count / total_non_disjunct
+  )
+
+disjunct_easement_stats
+non_disjunct_easement_stats
+```
+
+So these summary stats suggest that easements are less likely to appear in parcels that are disjunct. 
+
+Note about easements: the nature of work in easements within in a research project is such that easements introduce some heterogenetiy -- easement acquisition is a different beast compared to fee-simple acquisitions.
+
+Ta deal with this heteogenity, doing a camparison across grouprs my warrant a more stratified sample.
+
+
+
+## Exploring Manager vs Owner Disjointness
+
+Noxt figure: how often is the manager the same as the owner? And is it true more for some than for others? 
+These disjointness is indicative of a partnership.
+States or Federal? Who is more often to have partnerships
+
+There are relevant questions to understanding which combinations of actors (who are involved and how many are involved) as possibly having an effect on the rate at which protected areas form.
+
+
+Key fields are: managing_a and owner
+
+```{r}
+manager_owner_disjointness <- flma_data %>%
+  mutate(is_disjoint = managing_a != owner) %>%
+  group_by(matype2) %>%
+  summarize(
+    total_parcels = n(),
+    disjoint_count = sum(is_disjoint),
+    disjoint_proportion = disjoint_count / total_parcels
+  )
+
+# viz disjoint_proportion as a bar graph
+ggplot(manager_owner_disjointness, aes(x = matype2, y = disjoint_proportion, fill = matype2)) +
+  geom_bar(stat = "identity") +
+  labs(
+    title = "Proportion of Manager-Owner Disjointness by Manager Type (FLMA Dec2025)",
+    x = "Manager Type",
+    y = "Proportion of Disjointness"
+  ) +
+  theme_minimal()
+
+```
+
+Note: naming conventions slight differences can complicate this.
+
+
