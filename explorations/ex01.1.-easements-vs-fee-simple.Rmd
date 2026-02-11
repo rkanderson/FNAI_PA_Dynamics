@@ -1,0 +1,334 @@
+
+# Characterizing Fee-Simple and Conservation Easement Parcels 
+
+Ryan Anderson
+2/9/2025
+
+In this notebook, I aim to create a number of summary visualizations for 
+fee-simple and conservation easements side-by-side. Allegedly, conservation 
+easement acquisition is a different beast than fee-simple acquisition. Let's
+see if the characteristics in the FLMA database lend any support to this.
+
+```{r setup}
+rm(list=ls())
+
+# Load librarires
+library(tidyverse)
+library(here)
+library(janitor)
+library(knitr)
+
+# Load the FLMA dataset
+flma <- read_csv(here("data_raw", "FNAI_Spatial_Data_Attr_Tables", "flma_2025_12.csv")) %>%
+  clean_names()
+
+# If -999 appears in totacres or ltf_acres, replace with NA
+flma <- flma %>% 
+  mutate(totacres = ifelse(totacres == -999, NA, totacres),
+         ltf_acres = ifelse(ltf_acres == -999, NA, ltf_acres))
+
+```
+
+Let's start out by creating a new field in the FLMA dataset: a dummy variable
+that that says whether or not the parcel is an easement. `is_easement`
+
+
+ mutate(is_easement = str_ends(matype, "CE")) %
+
+```{r}
+flma <- flma %>% 
+  mutate(is_easement = str_ends(matype, "CE"))
+
+# Get summary
+flma %>% group_by(is_easement) %>% 
+  summarize(count=n(), mean_acres=mean(totacres, na.rm=TRUE), median_acres=median(totacres, na.rm=TRUE))
+```
+
+## Less than Fee (LTF) Acres
+
+So it looks like for acrage, you have 2 fields of concern
+- totacres: Total number of acres within the Managed Area. Figures are not GIS calculated (i.e., not polygon-based) unless specified in COMMENTS 1(2). Managed Area acreage figures are obtained directly from the managing agencies. -999 = no acreage provided
+- ltf_acres: "Number of acres within the Managed Area that are in less-than-fee ownership. Figures are not GIS calculated (i.e., not polygon-based) unless specified in COMMENTS 1(2). Acreage figures are obtained directly from the managing agencies."
+
+So the distinction between these two can become important in the context of studying easements. Since for an easement, they mighth report totacres as the acrage of the entire property, but ltf_acres as the number of acres that they specifically bought the rights to manage. 
+
+Let's try to see what looks like
+
+```{r}
+# Create a dot plot with ltf_acres on the y, and totacres on the x
+# facet wrap by is_easement
+# let the axes scale to best fit
+flma %>% 
+  ggplot(aes(x=totacres, y=ltf_acres)) +
+  geom_point() +
+  facet_wrap(~is_easement, scales="free") +
+  labs(title="LTF Acres vs Total Acres for Easements and Fee-Simple Parcels",
+       x="Total Acres (totacres)",
+       y="Less-than-Fee Acres (ltf_acres)")
+```
+Ok now this makes it interesting.
+For all the Conservation Easements, LTF acrage looks equal to the total acreage. This makes sense, since all the acres in an easement should be expected to be LTF. However, for the not_is_easement parcels, there are a number that have a good proportion of LTF.
+
+Let's quickly list these out. Here is a table of any entry that lacks the CE suffix in the matype field, but has a non-zero ltf_acres field. Let's also compute the percentage of the total acres that are LTF, and order the table by that percentage.
+
+```{r}
+# Let's filter for any parcels where is_easment == false
+# and ltf_acres is at least 10% of the total acres
+# Then we'll list out the rows in order of percentage
+flma %>% 
+  mutate(pct_ltf = ltf_acres / totacres) %>%
+  filter(is_easement == FALSE, pct_ltf > 0) %>%
+  arrange(desc(ltf_acres)) %>% 
+  select(maname, matype, totacres, ltf_acres, pct_ltf) %>% 
+  kable()
+```
+
+So it seems that the CE suffix migth not capture everything. There are other types of easements. Many different designations.
+
+How does pct_ltf look like? Let's geta. histogram of pct_ltf for these non-easement parcels
+
+```{r}
+
+# scale x manually by 0.1 increments
+
+flma %>% 
+  mutate(pct_ltf = ltf_acres / totacres) %>%
+  filter(is_easement == FALSE, pct_ltf > 0) %>%
+  ggplot(aes(x=pct_ltf)) +
+  geom_histogram(binwidth=0.1) +
+  scale_x_continuous(breaks=seq(0, 1, by=0.1)) +
+  labs(title="Distribution of Percentage of LTF Acres for Non-Easement Parcels",
+       x="Percentage of LTF Acres (ltf_acres / totacres)",
+       y="Count of Parcels")
+```
+
+There are in the ballpark of 20 parcels who have a significant percentage of LTF acres, even though they are not designated as conservation easements.
+
+That being said, there are a bunch who just have LTF Acres at 100% but are not designated as CEs. These are sometimes other easments (like flowage easements).
+
+So for the purpose of this little notebook, I'll introduce a convention where if a parcel's total land is at least 90% LTF Acres, then it is called an easment.
+
+Let's redo the easement field according to this criterion.
+
+```{r}
+flma <- flma %>% 
+  mutate(pct_ltf = ltf_acres / totacres,
+         is_easement = pct_ltf >= 0.9)
+```
+
+
+## Characterizing Easements and Non-Easements
+
+Things to compare
+pa size (totacres)
+protection status (protstat) -- ordinal 1, 2, or 3
+descript/comments -- natural language text
+
+## Parcel Size Comparison
+```{r}
+# Let's do a boxplot of totacres by is_easement
+# scale y log10 to better visualize the distribution
+flma %>% 
+  filter(!is.na(is_easement)) %>% # <-- we drop 2 data points
+  ggplot(aes(x=is_easement, y=totacres)) +
+  geom_boxplot() +
+  scale_y_log10() +
+  labs(title="Distribution of Total Acres for Easements and Non-Easements",
+       x="Is Easement",
+       y="Total Acres (log scale)")
+
+
+```
+Notable that non easements have a set of outliers in the very high range whereas easements have a set of outliers on the lower range.
+
+And now a histogram
+
+```{r}
+# Let's do a histogram of totacres by is_easement 
+flma %>% 
+  filter(!is.na(is_easement)) %>% 
+  ggplot(aes(x=totacres)) +
+  geom_histogram() +
+  scale_x_log10() +
+  facet_wrap(~is_easement, scales="free") +
+  labs(title="Distribution of Total Acres for Easements and Non-Easements",
+       x="Total Acres (log scale)",
+       y="Count of Parcels")
+```
+
+What if we tried to make this one single histogram where we stack bars and color code by is_easement?
+
+```{r}
+flma %>% 
+  filter(!is.na(is_easement)) %>% 
+  ggplot(aes(x=totacres, fill=is_easement)) +
+  geom_histogram(position="stack") +
+  scale_x_log10() +
+  labs(title="Distribution of Total Acres for Easements and Non-Easements",
+       x="Total Acres (log scale)",
+       y="Count of Parcels",
+       fill="Is Easement")
+```
+
+These look pretty similar in terms of the central tendency. Both look lognormal without any particualr skew, though the bump in the easement histograpm is notable.
+
+
+## Comparing Protection Status
+
+What does this number mean?
+From the metadata:
+
+
+List of values  Value 1
+Description Category I. This is the highest protection and reserved for lands that are specifically and judiciously managed for biodiversity protection. This category includes lands owned by private entities that are managed for biodiversity conservation, and lands administered by public agencies that are specially designated for biodiversity conservation through legislative action where natural events proceed without interference or are mimicked through management. The governmental agency acting alone cannot change these designations without legislative action and public involvement. Examples include The Nature Conservancy preserves and other private preserves committed to biodiversity conservation, preserves that are state-owned and managed, some national parks, federal wilderness areas, and some local preserves. For FNAI purposes, this designation will generally apply to the following: private sanctuaries and preserves, state preserves and botanical sites, many local preserves purchased and managed as environmentally sensitive lands, most national parks and seashores, national marine sanctuaries, and federal research natural areas.
+Value 2
+
+Description Category II. This second category applies to lands that are generally managed for their natural values but that may incur additional uses such as habitat manipulation for game species and/or some recreation infrastructure. These activities will likely degrade the quality of natural communities locally but the majority of the land will be managed for biodiversity protection. It also includes public lands with administrative designations for biodiversity conservation. Examples include private preserves managed for game species, national wildlife refuges, BLM areas of critical environmental concern, and state parks. For FNAI purposes, this designation will generally apply to the following: state parks, state reserves, state geological sites, state buffer preserves and aquatic preserves, wildlife and environmental areas, national wildlife refuges, some national park lands, and many locally managed lands purchased for natural resource protection.
+Value 3
+
+Description Category III. This category applies to lands maintained for multiple uses, including consumptive or recreational values, and not specifically or wholly dedicated to biodiversity conservation. It also includes lands with restricted development rights. Unrestricted public access is one criterion that may cause a property to be placed into this category. Examples include most nondesignated (i.e., multiple-use) public lands administered by the U.S. Department of Agriculture Forest Service and Bureau of Land Management, Department of Defense lands, state forests, regional and large local parks and open space, and private lands protected from subdivision by conservation easements and other title restrictions. For FNAI purposes, this designation will apply to state recreation areas, state gardens and trails, state forests, wildlife management areas, mitigation parks, lands managed by FL DEP Office of Greenways and Trails, most water management district properties, national forests, most Department of Defense lands, many local parks, and conservation easements on private properties. It also includes lands tracked primarily for administrative reasons, such as state historic and archaeological sites, state museums, fish management areas, national memorials, and national fish hatcheries.
+
+
+
+So let's get a breakdown for each of these categories. For Easements and Non-Easements, what percentage of the parcels fall into each of these categories?
+
+```{r}
+# Make a plot consisting of a single bar with segments for each
+# protstat category, and color code by is_easement
+flma %>% 
+  filter(!is.na(is_easement), !is.na(protstat)) %>% 
+  ggplot(aes(x=is_easement, fill=factor(protstat))) +
+  geom_bar(position="fill") +
+  labs(title="Distribution of Protection Status for Easements and Non-Easements",
+       x="Is Easement",
+       y="Proportion of Parcels",
+       fill="Protection Status (protstat)")
+```
+Alright, so it looks like an obvious asymmetry. Easements are overwhelmingly type in protection. And this is what we should expect, because the type 3 protection is meant to be applied for easements! Now one can ask the question, why are there some (even if few) easmeents of type 1 and 2 present?
+
+Let's find out.
+
+```{r}
+flma %>% 
+  filter(is_easement == TRUE, protstat %in% c(1, 2))
+```
+
+There are 11 such sites, some of which have "easement" in their name. Example: Hatchineha Ranch Conservation Bank Conservation Easement. Protection Status 1. So maybe this distinction actually can prove useful in the easement context.
+
+
+## Word Frequency Analysis
+
+So now let's go ahead and compare the natural language fields of these two categories. Doing a word frequency analysis can give us some hints to interesting things we can look into next.
+
+Since the comments and the description field both potentially contain a lot of useful text, I'll combine them. Then split into two dataframes.
+
+```{r}
+flma <- flma %>% 
+  mutate(descript_and_comments = paste(descript, comments, sep=" "))
+
+flma_easement <- flma %>% filter(is_easement == TRUE)
+flma_non_easement <- flma %>% filter(is_easement == FALSE)
+```
+
+Now we can get the word counts, remove stop words, and make a word cloud for each of these categories. Let's start with the easements.
+
+```{r}
+library(tidytext)
+# Tokenize the descriptions into words
+word_counts_easement <- flma_easement %>%
+  unnest_tokens(word, descript_and_comments) %>%
+  count(word, sort = TRUE)
+
+# Remove words like "the", "and", etc. using stop words
+data("stop_words")
+word_counts_easement_clean <- word_counts_easement %>%
+  anti_join(stop_words, by = "word")
+
+# let's also remove 'easement' since that's what we queried for anyways
+word_counts_easement_clean <- word_counts_easement_clean %>%
+  filter(word != "easement")
+
+# Now let's do the same for the non-easement parcels
+# Tokenize the descriptions into words
+word_counts_non_easement <- flma_non_easement %>%
+  unnest_tokens(word, descript_and_comments) %>%
+  count(word, sort = TRUE)
+
+# Remove words like "the", "and", etc. using stop words
+word_counts_non_easement_clean <- word_counts_non_easement %>%
+  anti_join(stop_words, by = "word")
+
+```
+
+Word cloud time!
+
+### Easements (n=906)
+
+```{r}
+library(wordcloud)
+set.seed(1234) # For reproducibility
+# Easement word cloud
+wordcloud(words = word_counts_easement_clean$word, freq = word_counts_easement_clean$n, min.freq = 1,
+          max.words=100, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+```
+
+
+### Non Easements (n=2,369)
+```{r}
+# Non-easement word cloud
+set.seed(1234) # For reproducibility
+wordcloud(words = word_counts_non_easement_clean$word, freq = word_counts_non_easement_clean$n, min.freq = 1,
+          max.words=100, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+```
+
+## Word Disparities
+
+So one might ask what are the words that are most disproportionately associated with easements vs non-easements? We can do this by computing the log odds ratio of word frequencies in the two categories.
+
+```{r}
+# Combine the two word count dataframes and add a category column
+word_counts_easement_clean <- word_counts_easement_clean %>%
+  mutate(category = "easement")
+
+word_counts_non_easement_clean <- word_counts_non_easement_clean %>%
+  mutate(category = "non_easement")
+
+combined_word_counts <- bind_rows(word_counts_easement_clean, word_counts_non_easement_clean)
+
+# Calculate total words in each category
+total_words <- combined_word_counts %>%
+  group_by(category) %>%
+  summarize(total = sum(n))
+
+# Calculate log odds ratio for each word
+# (technically we're calculating the difference in logs of probabilities with Laplace smoothing)
+word_odds <- combined_word_counts %>%
+  left_join(total_words, by = "category") %>%
+  group_by(word) %>%
+  summarize(log_odds_diff = log((n[category == "easement"] + 1) / (total[category == "easement"] + 1)) - 
+                           log((n[category == "non_easement"] + 1) / (total[category == "non_easement"] + 1))) %>%
+  arrange(desc(log_odds_diff))
+
+```
+
+Let's display the top 10 most "easement" words and the top 10 most "non-easement" words based on the log odds ratio.
+
+Top Easement Words
+```{r}
+# show just first 10 rows
+word_odds[1:10,]
+```
+
+Top Non-Easement Words
+```{r}
+#show last 10 rows
+word_odds[(nrow(word_odds)-9):nrow(word_odds),]
+```
+
+Some interesting things. The most disproportionately easement word token is "ZZ" which is used to indicate missing data, so perhaps there is some data blindness for easements.
+
+Another thing is that we see a specific place "miami" mentioned disproprotionately among non easements, so maybe Miami specifically is a place where easements are difficult to establish?
+
+For the easement words, it's neat to nee that specific agencies (usda and nrcs) made it in the top 10.
