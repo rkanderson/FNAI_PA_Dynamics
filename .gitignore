@@ -5,10 +5,14 @@
 .DS_Store
 README.html
 
-# Ignore all files in the data_outputs and figures directories
+# Ignore all files in the data_outputs and figures directories.
+# data_raw should also be ignored (we should get this from elsewhere)
 data_outputs/*
 data_raw/*
 figures/*
+
+# Ignore the rendered HTML files of notebooks in the explorations directory
+explorations/*.html
 
 
 # But do not ignore the READMEs in these directories (or any instruction files)
