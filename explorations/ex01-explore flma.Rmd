@@ -266,6 +266,7 @@ ggplot(manager_owner_disjointness, aes(x = matype2, y = disjoint_proportion, fil
 
 ```
 
-Note: naming conventions slight differences can complicate this.
+Note: naming conventions slight differences can complicate this, and result in a bunch of false differences.
 
+This work is continued in ex01.2
 

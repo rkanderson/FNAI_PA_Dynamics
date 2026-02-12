@@ -1,0 +1,170 @@
+
+Ryan Anderson
+02/11/2025
+
+In this notebook, I'll aim to see if describe what we can about partnerships among
+actors in the conservation process. There are some relevant questions regarding how
+which combinations of actors being involved (and how many actors involved) affect the rate
+at which an area gets protected.
+
+One might be interested in looking into Florida Forever project data, as FDEP management
+reports lay out exactly which agencies made which acquisitions over the years.
+
+In the FLMA data, however, one can glean some info about the partnerships 
+simply from the fact that the manager and owner of a protected area may not be the same.
+Looking at these data is a little narrower than considering an entire FF BOT project, which
+encompasses a number of protected areas with different managers. This would merely be at the level
+of an individual managed area.
+
+
+
+So let's dig into the data. In a previous notebook (ex01) we found out that the
+fields managing_a and owner could be different strings, but really refer to the same agency.
+
+Let's see if we can get a catalog of all these owners and managing agencies.
+
+```{r setup}
+# clear env
+rm(list=ls())
+
+library(tidyverse)
+library(janitor)
+library(here)
+
+# load data
+flma <- read_csv(here("data_raw", "FNAI_Spatial_Data_Attr_Tables", "flma_2025_12.csv")) %>%
+  clean_names()
+
+```
+
+First let's create a dummy variable indicating whether the owner and managing_a are the same or not
+we'll call this "partnership" for the sake of this exercise, though it may not be a perfect term
+
+```{r}
+flma <- flma %>%
+  mutate(partnership = if_else(managing_a == owner, 0, 1))
+```
+
+Now let's inspect the all "partnership" managed areas to see which names
+are the same agency but written as different strings.
+
+As a shortcut, we can grab all rows that have at least one word in common between the managing_a and owner fields, which is a strong signal that they might be the same actor but written differently.
+
+```{r}
+flma %>% 
+  filter(partnership == 1) %>%
+  select(managing_a, owner) %>%
+  distinct() %>% 
+  filter(str_detect(managing_a, word(owner, 1)) | str_detect(owner, word(managing_a, 1)))
+```
+
+Great! A manageable 30 row table
+
+Here are the obvious ones I was able to note down (managing agency on the left and owner on the right)
+
+US Dept. of the Interior, Fish and Wildlife Service --	US Fish & Wildlife Service
+US Dept. of Defense, Air Force --	US Air Force
+US Dept. of Defense, Navy --	US Navy
+City of Jacksonville --	Duval County/City of Jacksonville
+Mosaic Fertilizer, LLC --	The Mosaic Company
+Florida Power & Light Company --	Florida Power and Light Company
+Alachua Conservation Trust. -- Alachua Conservation Trust
+Bay County Conservancy --	Bay County Conservancy, Inc.
+US Dept. of Transportation, Coast Guard --	US Dept. of Homeland Security, Coast Guard
+US Dept. of Defense, Marine Corps --	US Marine Corps
+Florida Power Light Company --	Florida Power and Light Company	
+Putnam Land Conservancy, Inc. --	Putnam Land Conservancy
+
+
+However it should be noted that there are instances where the owner and mananging agency are technically different, but one 
+organizations is nested within the other. For example
+
+City of Clearwater Parks and Recreation --	City of Clearwater
+
+The city is the owner, but dept of parks and recreation is the manager.
+
+
+So this would lead me to another approach.
+There are only 30 instances of differing strings that have at least one word in common.
+
+Perhaps it's reasonable to consider something a partnership if the strings are unequal and at most one word is in common.
+
+Let's try this out.
+
+```{r}
+# make a new partnership dummy variable field,
+# but this time based on whether the number of shared words among managing_a and owner is less than or equal to 2
+# let's use str_detect
+flma <- flma %>% 
+  mutate(
+    shared_words_man_own = map2_int(managing_a, owner, ~ {
+      words1 <- str_split(str_to_lower(.x), "\\s+")[[1]]
+      words2 <- str_split(str_to_lower(.y), "\\s+")[[1]]
+      length(intersect(words1, words2))
+    }),
+    partnership = if_else(managing_a != owner & shared_words_man_own < 2, 1L, 0L)
+  )
+
+```
+
+```{r}
+# inspect the new partnership variable
+flma %>% filter(partnership == 1) %>% select(owner, managing_a)
+```
+
+```{r}
+# inspect the instances where there are no parternerships detected (but there is a shared word)
+flma %>% filter(partnership == 0) %>% select(owner, managing_a) %>%
+  filter(managing_a != owner) %>% distinct()
+```
+
+This did a pretty decent job it looks like.
+
+
+## Visualizing Partnerships (disjoint owner and manager)
+
+```{r}
+# Get proportion partnerships for each type
+# Visualize as bar graph
+flma %>% 
+  group_by(matype2) %>% 
+  summarize(proportion_partnerships = mean(partnership)) %>%
+  ggplot(aes(x=matype2, y=proportion_partnerships)) +
+  geom_bar(stat="identity") +
+  labs(x="Management Type", y="Proportion of Managed Areas in Partnerships") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Wow apparentlry federal government is a "partership" almost 60% of the time? Let's check this
+
+```{r}
+flma %>% 
+  filter(matype2 == "Federal", partnership == 1) %>% 
+  select(owner, managing_a, partnership)
+```
+Looks like yes indeed, many of these federal partnerships are done with private individuals.
+
+So some natural questions:
+- How much proportion of the total acrage is partnership land?
+- How often are these partnerships easements?
+
+
+**Proportion of Land**
+
+```{r}
+flma %>%
+  group_by(matype2) %>%
+  summarize(proportion_partnerships = sum(totacres * partnership, na.rm=TRUE) / sum(totacres, na.rm=TRUE)) %>% 
+  ggplot(aes(x=matype2, y=proportion_partnerships)) +
+  geom_bar(stat="identity") +
+  labs(x="Management Type", y="Proportion of Land in Partnerships") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+
+Interesting....
+State and Local are actually quite comparable in their proportions when considering managed area raw counts vs weighting by acrage.
+But for Federal Land, the proportion gets scaled way down, and private actually goes up a bit (perhaps because of some large easments adding up?)
