@@ -332,3 +332,7 @@ Some interesting things. The most disproportionately easement word token is "ZZ"
 Another thing is that we see a specific place "miami" mentioned disproprotionately among non easements, so maybe Miami specifically is a place where easements are difficult to establish?
 
 For the easement words, it's neat to nee that specific agencies (usda and nrcs) made it in the top 10.
+
+Perhaps the most dramatic insight from this is that "monitored" appears about 5 orders of magnitude more in the description/comments for non-easements than it does for easements, suggesting potential significant lack of monitoring in easements.
+
+All of these "findings" should be interpreted with caution however, as we're only looking at disparities among word frequencies for the data entries within FNAI's own dataset -- the entry process itself could have had an effect.
