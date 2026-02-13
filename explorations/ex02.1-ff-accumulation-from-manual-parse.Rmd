@@ -1,0 +1,76 @@
+
+# Visaulizing Florida Forever Project Accumulations through Manually parsed data
+
+Ryan Anderson
+Feb 13, 2026
+
+This notebook attempts to create a proof of concept for how we might try to see
+how a project has evolved over time, in this case we can set the boundary to a Florida Forever
+BOT project, each of which has a linked PDF containing descriptions of how the project
+evolved over time.
+
+As a proof of concept, I parsed out bombing range ridge data and turned it into a usable table.
+
+Here's the sort of visualization we might make.
+
+```{r setup}
+# clear env
+rm(list=ls())
+
+# load libs
+library(tidyverse)
+library(here)
+library(janitor)
+
+# load data
+# data_raw/ff_bot_project_timelines_manually_parsed.csv
+ff_bot_timelines <- read_csv(here("data_raw", "ff_bot_project_timelines_manually_parsed.csv")) %>%
+  clean_names()
+
+bombing_range_ridge <- ff_bot_timelines %>%
+  filter(project_name == "Bombing Range Ridge")
+
+```
+
+
+Note: this data file will continue to be updated. The current version can be downloaded from the project GDrive: https://docs.google.com/spreadsheets/d/1eNoudZBucQE_7YirpqEpINCTQ28U_FTcMPwfAjc_AX0/edit?usp=sharing
+
+Data fields
+[1] "project_name"                            "fdep_report_link"                        "year"                                   
+[4] "acres_acquired"                          "acquisition_type"                        "acres_of_project_boundary_expanded"     
+[7] "intended_acquisition_type_for_expansion" "notes"              
+
+Let's compute cumulative fields.
+Let's get cumulative acres acquired and cumulative project boundary acres.
+
+```{r}
+bombing_range_ridge <- bombing_range_ridge %>%
+  arrange(year) %>%
+  mutate(cumulative_acres_acquired = cumsum(acres_acquired),
+         cumulative_project_boundary_expanded = cumsum(acres_of_project_boundary_expanded))
+```
+
+Now let's do a quick pivot and make a double line graph (one for project boundary cumulative and the other for project acres acquired cumulative)
+
+```{r}
+
+# Pivot data to long format for plotting
+bombing_range_ridge %>%
+  select(year, cumulative_acres_acquired, cumulative_project_boundary_expanded) %>%
+  pivot_longer(cols = c(cumulative_acres_acquired, cumulative_project_boundary_expanded),
+               names_to = "metric",
+               values_to = "cumulative_acres") %>% 
+  ggplot(aes(x = year, y = cumulative_acres, color = metric)) +
+  geom_line(size = 1) +
+  labs(
+    title = "Bombing Range Ridge",
+    x = "Year",
+    y = "Cumulative Acres",
+    color = "Metric"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+
+
