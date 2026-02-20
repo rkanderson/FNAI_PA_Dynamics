@@ -6,7 +6,13 @@ We have a dataset of projects, and a dataset of acquisitions. What do the patter
 
 I will be using the attribute tables extracted, so no specific polygon geometries. So the overlap might not be perfect. Let's see how much mileage we can get out of this technique
 
-
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
 
 
 ```{r}

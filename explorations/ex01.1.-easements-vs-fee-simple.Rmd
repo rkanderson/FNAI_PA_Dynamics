@@ -9,7 +9,15 @@ fee-simple and conservation easements side-by-side. Allegedly, conservation
 easement acquisition is a different beast than fee-simple acquisition. Let's
 see if the characteristics in the FLMA database lend any support to this.
 
-```{r setup}
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+```{r}
 rm(list=ls())
 
 # Load librarires

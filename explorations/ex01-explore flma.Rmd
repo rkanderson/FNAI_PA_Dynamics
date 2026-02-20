@@ -8,7 +8,11 @@ The purpose of this notebook is to look for overall patterns in the "status-quo"
 We will be looking at the FLMA Dec2025 dataset, which includes all land protections in Florida up to December 2025.
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
 ```
 
 ```{r load-packages}

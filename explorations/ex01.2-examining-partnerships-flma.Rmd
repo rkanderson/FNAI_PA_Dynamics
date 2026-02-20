@@ -23,7 +23,15 @@ fields managing_a and owner could be different strings, but really refer to the 
 
 Let's see if we can get a catalog of all these owners and managing agencies.
 
-```{r setup}
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+```{r}
 # clear env
 rm(list=ls())
 

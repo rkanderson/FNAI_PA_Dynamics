@@ -13,7 +13,15 @@ As a proof of concept, I parsed out bombing range ridge data and turned it into 
 
 Here's the sort of visualization we might make.
 
-```{r setup}
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+```{r}
 # clear env
 rm(list=ls())
 
