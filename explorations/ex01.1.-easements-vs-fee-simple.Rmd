@@ -295,6 +295,8 @@ wordcloud(words = word_counts_non_easement_clean$word, freq = word_counts_non_ea
 
 So one might ask what are the words that are most disproportionately associated with easements vs non-easements? We can do this by computing the log odds ratio of word frequencies in the two categories.
 
+$$\text{log_odds_diff}(w) =log(\frac{|E \cap A_w|+1}{|E|+1})-log(\frac{|NE \cap A_w|+1}{|NE|+1})$$
+
 ```{r}
 # Combine the two word count dataframes and add a category column
 word_counts_easement_clean <- word_counts_easement_clean %>%
