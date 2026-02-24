@@ -1,0 +1,200 @@
+
+# Exploring the Joined Dataset (FF Acquisitions clipped and joined to their respective containing projects)
+
+Ryan Anderson
+Feb 19, 2026
+
+In this notebook, I attempt to use a new spatially joined dataset to see what we can spot regarding the patterns of individual protected area formation. FF Projects provide a convenient boundary we can use. And this joined dataset can let us easily see the patterns of parcels being acquired within these bounds.
+
+The raw data can be downloaded from our drive at this link
+https://drive.google.com/drive/folders/1VZlUSSH7tjnSOgBInS4itMEWe7_SHbU-?usp=drive_link
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+```{r}
+# clear env
+rm(list=ls())
+
+# load libraries
+library(tidyverse)
+library(here)
+library(janitor)
+library(readxl)
+```
+
+
+```{r}
+# Load Data
+#data_raw/FFBOT_Spatial_Join_Acq-Proj.xlsx
+ff_joined <- read_excel(here("data_raw", "FFBOT_Spatial_Join_Acq-Proj.xlsx")) %>%
+  clean_names()
+```
+
+**Column Names**
+
+ [1] "objectid"       "join_count"     "target_fid"     "id"             "par_name"       "prj_name"       "county"         "acq_type"       "close_date"    
+[10] "ff_pur_pr1"     "ff_pur_pr2"     "oth_pur_pr"     "ff_funds_s"     "prc_ff"         "ff_ac_pur"      "acres"          "ma_name"        "ma_id"         
+[19] "macode_bcd"     "man_agncy"      "in_flma"        "comments"       "dig_com"        "citation"       "in_poly_fid"    "sim_pgn_flag"   "max_simp_tol"  
+[28] "min_simp_tol"   "site_id"        "sitename"       "short_name"     "short_site"     "project_cd"     "project_name"   "ff_cat"         "ff_rank"       
+[37] "prisec_acres"   "gis_acres"      "sitedesc"       "boundjust"      "protcom"        "macom"          "site_relations" "sitecom"        "fdep_url"      
+[46] "shape_length"   "shape_area"    
+
+
+
+
+Fields of interest
+
+"acres" (corresponding to ff acquisitions) -- Desc: "ACRES = GIS-calculated area in acres."
+
+"gis_acres" (corresponding to the ffbot project boundary) -- Desc: "Area of the Florida Forever BOT project site, in acres, calculated from GIS boundaries."
+
+"close_date" (corresponding to ff acquisitions) -- Desc: "Closing date. The official closing date for the parcel, as provided by the Division of State Lands."
+
+Identifiers:
+"id" (corresponding to ff acquisitions) -- "GIS ID number for parcel tracking, designed by FNAI." 
+
+"site_id" (corresponding to ff projects) -- "Unique numeric identifier for each site, designed by NatureServe for use with the BIOTICS data management system."
+
+
+## Selecting and Cleaning
+
+Let's just select the previously mentioned fields and then rename them to unambiguously differentiate between the individual acquisition data and the larger ffbot project.
+
+```{r}
+ff_joined_selected <- ff_joined %>%
+  select(id, site_id, acres, gis_acres, close_date, shape_area) %>%
+  rename(acquisition_acres = acres,
+         project_boundary_acres = gis_acres,
+         acquisition_id = id,
+         project_id = site_id)
+
+```
+
+Uh oh, looks like we have a bunch of null project ids. We also have a lot of null project_boundary_acres.
+
+acquisition acres don't look as bad as the missingness, but then again we only want to include portions of project boundaries that are within the project.
+
+So it may be better to just use the ArcGIS computed shape_area property instead. 
+
+Something of note though: this was only inherited once per data layer. So the ff acquisitions joined dataset wouldn't have the shape_area of the joined parent.
+As such, I'll need to perform a join operation with the ffbot projects dataset. 
+
+And doing so requires a primary key to match projects. Given that the project IDs are frequently null, what could we actually use as a proper primary key?
+
+For now let's ditch this selected dataset and remove it from memory.
+```{r}
+rm(ff_joined_selected)
+```
+
+
+## Primary Key Hunting
+
+Let's see what could help us link the data in the ff projects set. Perhaps something like the project name?
+
+```{r}
+# Let's load up the ffbot dataset
+ff_projects <- read_csv(here("data_raw", "FNAI_Spatial_Data_Attr_Tables", "ffbot_2025_12.csv")) %>%
+  clean_names()
+```
+
+
+Field sitename
+"Site name. The name of the Florida Forever BOT project, or portion of the project, represented by the site. For Florida Forever BOT projects that are composed of multiple sites (e.g., Dade County Archipelago Florida Forever BOT Project), the SITENAME for each site begins with the name of the project, and this is followed by the name of the particular site within the project (e.g., Dade County Archipelago Florida Forever BOT Project - Whispering Pines)."
+
+Field project_name
+"Project name. The name of the Florida Forever BOT project."
+
+It seems to me that there is some ambiguity as to whether these individual sites within a project should be grouped together or not.
+
+Let's see if sitename is unique all across the ff_projects dataset.
+
+```{r}
+ff_projects %>%
+  select(sitename) %>%
+  distinct() %>%
+  count()
+```
+
+
+
+
+## The Second Go (A realization of missing data -- probably fault of GIS "within" rel)
+
+```{r}
+# First, let's just get the sitename and shape_area from the ff_projects dataset
+ff_projects_sitnames_areas <- ff_projects %>%
+  select(sitename, shape_area) %>%
+  rename(project_boundary_acres = shape_area)
+
+# Next, let's select a subset of the ff_joined that includes the date, area (via shape_area), and the sitename (which is the primary key we want to use to link the datasets)
+ff_joined_subset <- ff_joined %>%
+  select(close_date, shape_area, sitename, project_name) %>%
+  rename(acquisition_acres = shape_area)
+
+# Now let's perform a left join to bring in the project boundary acres from the ff_projects dataset
+ff_joined_with_boundaries <- ff_joined_subset %>%
+  left_join(ff_projects_sitnames_areas, by = "sitename")
+
+```
+
+
+Oh shoot, looks like there's actually not always a sitename inherited by the joined dataset. And yet each ff project had a distinct sitename field. So what's up?
+
+Loeking at ff_joined again, it appears that when there is no sitename, there is NOTHING that got associated from the other object. So perhaps the "within" relationship didn't apply with any ff project object.
+
+And now that I read the spatial join documentation, it makes sense: the "within" relationship only applies to features that are completely within the boundary of another feature. So if an acquisition parcel was located perhaps at the edge of a project, the clipped feature that was ultimately used in the join operation may have had borders so close to the the project boundary that it triggered an edge case (a literal edge case).
+
+So it seems we could have just as easily accomplished this by using a spatial join with an overlaps relationship rather than "within". In the previous workflow we already did do a clip anyways.
+
+
+## Building the Pipeline Anyways
+
+Even though I have missing data at the moment, I can still construct the pipeline for when we do get the data. When we get it, it will have the exact same format as we are dealing with right now. And we'll need to decide what to do with it.
+
+So first things first. Let's get a computed field that indicates the proportion of land within the project boundaries that the acquisition covers.
+
+```{r}
+ff_joined_with_boundaries <- ff_joined_with_boundaries %>%
+  mutate(proportion_of_project_acquired = acquisition_acres / project_boundary_acres)
+```
+
+Next let's get a field that cumulatively shows the totol proportion of project acquired over time. This requires the processing of a time variable. So let's first convert the close_date field to a date format and then arrange the data by project and date.
+
+```{r}
+ff_joined_with_boundaries <- ff_joined_with_boundaries %>%
+  mutate(close_date = as.Date(close_date, format = "%Y-%m-%d")) %>%
+  arrange(project_name, close_date) %>%
+  group_by(project_name) %>%
+  mutate(cumulative_proportion_acquired = cumsum(proportion_of_project_acquired))
+```
+
+
+Now let's try getting picking a random project and plotting the cumulative proportion acquired over time.
+
+```{r}
+# Let's pick a random project name
+random_project_name <- sample(unique(ff_joined_with_boundaries$project_name), 1)
+
+# Now let's filter the dataset for this project and plot the cumulative proportion acquired over time
+ff_joined_with_boundaries %>%
+  filter(project_name == random_project_name) %>%
+  ggplot(aes(x = close_date, y = cumulative_proportion_acquired)) +
+  geom_line() +
+  geom_point() +
+  labs(title = paste(random_project_name),
+       x = "Close Date",
+       y = "Cumulative Proportion Acquired") +
+  theme_minimal()
+```
+
+Wow: some of these actually have a lot of datapoints.
+
+Florida Keys Ecosystem project doesn't add up to 100% with its cumulative sum. So something is up.
+
+
