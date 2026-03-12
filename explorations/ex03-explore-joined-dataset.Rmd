@@ -32,7 +32,7 @@ library(readxl)
 ```{r}
 # Load Data
 #data_raw/FFBOT_Spatial_Join_Acq-Proj.xlsx
-ff_joined <- read_excel(here("data_raw", "FFBOT_Spatial_Join_Acq-Proj.xlsx")) %>%
+ff_joined <- read_excel(here("data_raw", "FFBOT_Spatial_Join_Acq-Proj.xls")) %>%
   clean_names()
 ```
 
@@ -134,7 +134,7 @@ ff_projects_sitnames_areas <- ff_projects %>%
 
 # Next, let's select a subset of the ff_joined that includes the date, area (via shape_area), and the sitename (which is the primary key we want to use to link the datasets)
 ff_joined_subset <- ff_joined %>%
-  select(close_date, shape_area, sitename, project_name) %>%
+  select(close_date, shape_area, sitename) %>%
   rename(acquisition_acres = shape_area)
 
 # Now let's perform a left join to bring in the project boundary acres from the ff_projects dataset
@@ -169,8 +169,8 @@ Next let's get a field that cumulatively shows the totol proportion of project a
 ```{r}
 ff_joined_with_boundaries <- ff_joined_with_boundaries %>%
   mutate(close_date = as.Date(close_date, format = "%Y-%m-%d")) %>%
-  arrange(project_name, close_date) %>%
-  group_by(project_name) %>%
+  arrange(sitename, close_date) %>%
+  group_by(sitename) %>%
   mutate(cumulative_proportion_acquired = cumsum(proportion_of_project_acquired))
 ```
 
@@ -179,11 +179,11 @@ Now let's try getting picking a random project and plotting the cumulative propo
 
 ```{r}
 # Let's pick a random project name
-random_project_name <- sample(unique(ff_joined_with_boundaries$project_name), 1)
+random_project_name <- sample(unique(ff_joined_with_boundaries$sitename), 1)
 
 # Now let's filter the dataset for this project and plot the cumulative proportion acquired over time
 ff_joined_with_boundaries %>%
-  filter(project_name == random_project_name) %>%
+  filter(sitename == random_project_name) %>%
   ggplot(aes(x = close_date, y = cumulative_proportion_acquired)) +
   geom_line() +
   geom_point() +
@@ -196,5 +196,111 @@ ff_joined_with_boundaries %>%
 Wow: some of these actually have a lot of datapoints.
 
 Florida Keys Ecosystem project doesn't add up to 100% with its cumulative sum. So something is up.
+
+
+## Getting ALL the plots
+
+So now I want to do something a little wild. We want to be able to see all our accumulation plots together so we can start to suss out some patterns.
+
+So I'm going to try generating a bunch of them in a loop, and then outputting them to a folder.
+
+First, let's make a helper function to create the accumulation plot. It should take in a sitename
+
+```{r}
+create_accumulation_plot <- function(sitename_param) {
+  project_data <- ff_joined_with_boundaries %>%
+    filter(sitename == sitename_param)
+  
+  p <- ggplot(project_data, aes(x = close_date, y = cumulative_proportion_acquired)) +
+    geom_line() +
+    geom_point() +
+    labs(title = paste(sitename_param),
+         x = "Close Date",
+         y = "Cumulative Proportion Acquired") +
+    theme_minimal()
+  
+  return(p)
+}
+
+# Test it out
+test_plot <- create_accumulation_plot("Pal-Mar Florida Forever BOT Project")
+test_plot
+```
+Now let's get an array of all sitenames and loop through it, generate the plot, then save to a folder called 
+data_outputs/ff_accumulation_plots
+
+But with one catch: don't do any site that has only a single data point or wo
+
+## Creating all plot files
+
+```{r}
+# Get all unique sitenames
+all_sitenames <- unique(ff_joined_with_boundaries$sitename)
+
+
+# Loop through sitenames, create plot, and save
+# for (sitename_i in all_sitenames) {
+#   # if the number of data points for this sitename is less than or equal to 1, skip it
+#   if (nrow(ff_joined_with_boundaries %>% filter(sitename == sitename_i)) <= 2) {
+#     next
+#   }
+#   
+#   plot <- create_accumulation_plot(sitename_i)
+#   
+#   filename <- paste0(sitename_i, ".png")
+#   # change slashes to dashes to avoid creating new folders
+#   filename <- str_replace_all(filename, "/", "-")
+#   
+#   filepath <- here("data_outputs", "ff_accumulation_plots", filename)
+#   
+#   ggsave(filename = filepath, plot = plot, width = 8, height = 6)
+# }
+
+```
+
+## How much did FF Cover?
+
+```{r}
+# ff_joined_with_boundaries %>% 
+#   group_by(sitename) %>% 
+#   summarize(total_area_acquired = sum(proportion_of_project_acquired)) %>% 
+#   arrange(desc(total_area_acquired)) %>% 
+#   View()
+```
+
+```{r}
+ff_joined_with_boundaries %>%
+  group_by(sitename) %>%
+  summarize(total_prop_acquired = sum(proportion_of_project_acquired)) %>%
+  mutate(log_prop = log(total_prop_acquired)) %>% 
+  ggplot(aes(x=log_prop)) +
+  geom_histogram(breaks=seq(-15, 10))+
+  geom_vline(xintercept = -1, color="red")+
+  labs(x="log(proportion covered)", y="count")+
+  theme_minimal()
+```
+
+```{r}
+num_less_than_0.1 <- ff_joined_with_boundaries %>%
+  group_by(sitename) %>%
+  summarize(total_prop_acquired = sum(proportion_of_project_acquired)) %>%
+  filter(total_prop_acquired <= 0.1) %>% 
+  nrow()
+
+num_less_than_0.1 / 
+  
+length(unique(ff_joined_with_boundaries$sitename))
+
+unique(ff_joined_with_boundaries$sitename)
+  
+```
+
+
+```{r}
+# Let's write a basic for-loop to print numbers 1 to 10
+for (i in 1:10) {
+  print(i)
+}
+```
 
 
