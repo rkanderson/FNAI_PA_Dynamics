@@ -1,0 +1,229 @@
+
+# Mass generation of curve plots
+
+Ryan Anderson
+March 12, 2026
+
+In this notebook, I provide code to generate a BUNCH of plots. Like a BUUUUNCH.
+
+The raw data can be downloaded from our drive at this link
+https://drive.google.com/drive/folders/1VZlUSSH7tjnSOgBInS4itMEWe7_SHbU-?usp=drive_link
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+```{r}
+# clear env
+rm(list=ls())
+
+# Global parameter variables
+GENERATE_CUMULATIVE_PLOTS <- FALSE
+GENERATE_NON_CUMULATIVE_YEARLY_PLOTS <- TRUE
+
+# load libraries
+library(tidyverse)
+library(here)
+library(janitor)
+library(readxl)
+```
+
+
+```{r}
+# Load Data
+# get the joined dataset
+#data_raw/FFBOT_Spatial_Join_Acq-Proj.xlsx
+ff_joined <- read_excel(here("data_raw", "FFBOT_Spatial_Join_Acq-Proj.xls")) %>%
+  clean_names()
+
+# Let's load up the ffbot dataset
+ff_projects <- read_csv(here("data_raw", "FNAI_Spatial_Data_Attr_Tables", "ffbot_2025_12.csv")) %>%
+  clean_names()
+```
+
+**Column Names**
+
+ [1] "objectid"       "join_count"     "target_fid"     "id"             "par_name"       "prj_name"       "county"         "acq_type"       "close_date"    
+[10] "ff_pur_pr1"     "ff_pur_pr2"     "oth_pur_pr"     "ff_funds_s"     "prc_ff"         "ff_ac_pur"      "acres"          "ma_name"        "ma_id"         
+[19] "macode_bcd"     "man_agncy"      "in_flma"        "comments"       "dig_com"        "citation"       "in_poly_fid"    "sim_pgn_flag"   "max_simp_tol"  
+[28] "min_simp_tol"   "site_id"        "sitename"       "short_name"     "short_site"     "project_cd"     "project_name"   "ff_cat"         "ff_rank"       
+[37] "prisec_acres"   "gis_acres"      "sitedesc"       "boundjust"      "protcom"        "macom"          "site_relations" "sitecom"        "fdep_url"      
+[46] "shape_length"   "shape_area"    
+
+
+
+```{r}
+# First, let's just get the sitename and shape_area from the ff_projects dataset
+ff_projects_sitnames_areas <- ff_projects %>%
+  select(sitename, shape_area) %>%
+  rename(project_boundary_acres = shape_area)
+
+# Next, let's select a subset of the ff_joined that includes the date, area (via shape_area), and the sitename (which is the primary key we want to use to link the datasets)
+ff_joined_subset <- ff_joined %>%
+  select(close_date, shape_area, sitename) %>%
+  rename(acquisition_acres = shape_area)
+
+# Now let's perform a left join to bring in the project boundary acres from the ff_projects dataset
+ff_joined_with_boundaries <- ff_joined_subset %>%
+  left_join(ff_projects_sitnames_areas, by = "sitename")
+
+# Let's get a computed field that indicates the proportion of land within the project boundaries that the acquisition covers.
+ff_joined_with_boundaries <- ff_joined_with_boundaries %>%
+  mutate(proportion_of_project_acquired = acquisition_acres / project_boundary_acres)
+```
+
+Next let's get a field that cumulatively shows the total proportion of project acquired over time. This requires the processing of a time variable. So let's first convert the close_date field to a date format and then arrange the data by project and date.
+
+```{r}
+ff_joined_with_boundaries <- ff_joined_with_boundaries %>%
+  mutate(close_date = as.Date(close_date, format = "%Y-%m-%d")) %>%
+  arrange(sitename, close_date) %>%
+  group_by(sitename) %>%
+  mutate(cumulative_proportion_acquired = cumsum(proportion_of_project_acquired))
+```
+
+
+## Generating accumulation plots
+
+So now I want to do something a little wild. We want to be able to see all our accumulation plots together so we can start to suss out some patterns.
+
+So I'm going to try generating a bunch of them in a loop, and then outputting them to a folder.
+
+First, let's make a helper function to create the accumulation plot. It should take in a sitename
+
+```{r}
+create_accumulation_plot <- function(sitename_param) {
+  project_data <- ff_joined_with_boundaries %>%
+    filter(sitename == sitename_param)
+  
+  p <- ggplot(project_data, aes(x = close_date, y = cumulative_proportion_acquired)) +
+    geom_line() +
+    geom_point() +
+    labs(title = paste(sitename_param),
+         x = "Close Date",
+         y = "Cumulative Proportion Acquired") +
+    theme_minimal()
+  
+  return(p)
+}
+
+# Test it out
+test_plot <- create_accumulation_plot("Pal-Mar Florida Forever BOT Project")
+test_plot
+```
+Now let's get an array of all sitenames and loop through it, generate the plot, then save to a folder called 
+data_outputs/ff_accumulation_plots
+
+But with one catch: don't do any site that has only a single data point or wo
+
+## Creating all cumulative plot files
+
+```{r}
+# Get all unique sitenames of sites that exist in ff_joined_with_boundaries
+# ie all sites that have had at least one piece of an acquisition occur within its bounds.
+all_sitenames <- unique(ff_joined_with_boundaries$sitename)
+```
+
+```{r}
+### Creating cumulative plots
+# Loop through sitenames, create plot, and save
+if(GENERATE_CUMULATIVE_PLOTS) {
+  for (sitename_i in all_sitenames) {
+    # if the number of data points for this sitename is less than or equal to 1, skip it
+    if (nrow(ff_joined_with_boundaries %>% filter(sitename == sitename_i)) <= 2) {
+      next
+    }
+  
+    plot <- create_accumulation_plot(sitename_i)
+    filename <- paste0(sitename_i, ".png")
+    
+    # change slashes to dashes to avoid creating new folders
+    filename <- str_replace_all(filename, "/", "-")
+    filepath <- here("data_outputs", "ff_accumulation_plots", filename)
+    ggsave(filename = filepath, plot = plot, width = 8, height = 6)
+  }
+}
+
+```
+
+
+## Creating Non-Cumulative Yearly Plots -- Helper function
+
+```{r}
+# let's make a similar helper function that will take in a sitename and produce
+# a non-cumulative plot of the proportion of project acquired year-by-year
+create_yearly_noncum_plot <- function(sitename_param) {
+  site_data <- ff_joined_with_boundaries %>%
+    filter(sitename == sitename_param)
+  
+  # obtain year-by-year values by grouping by year and summing the proportion acquired for each year
+  site_data_yearly <- site_data %>%
+    group_by(year = lubridate::year(close_date)) %>%
+    summarize(yearly_proportion_acquired = sum(proportion_of_project_acquired, na.rm = TRUE))
+  
+  # now let's make the plot
+  p <- ggplot(site_data_yearly, aes(x = year, y = yearly_proportion_acquired)) +
+    geom_line() +
+    geom_point() +
+    labs(title = paste(sitename_param),
+         x = "Year",
+         y = "Yearly Proportion Acquired") +
+    theme_minimal()
+  
+  # redo as a bar plot
+  # p <- ggplot(site_data_yearly, aes(x = year, y = yearly_proportion_acquired)) +
+  #   geom_bar(stat = "identity") +
+  #   labs(title = paste(sitename_param),
+  #        x = "Year",
+  #        y = "Yearly Proportion Acquired") +
+  #   theme_minimal()
+  
+  
+  
+  return(p)
+ 
+}
+
+# Test
+test_yearly_noncum_plot <- create_yearly_noncum_plot("Pal-Mar Florida Forever BOT Project")
+test_yearly_noncum_plot
+
+```
+
+## Creating all non-cumulative yearly plot files
+
+```{r}
+# Loop through sitenames, create plot, and save
+if(GENERATE_NON_CUMULATIVE_YEARLY_PLOTS) {
+  for (sitename_i in all_sitenames) {
+    # if the number of years spanned by the sitename is less than or equal to 2, skip it
+    # ie if the difference between the max year and min year is less than or equal to 0 or 1, skip it
+    
+    # get the max and min years
+    site_years <- ff_joined_with_boundaries %>%
+      filter(sitename == sitename_i) %>%
+      mutate(year = lubridate::year(close_date)) %>%
+      summarize(min_year = min(year, na.rm = TRUE), max_year = max(year, na.rm = TRUE))
+    
+    if (site_years$max_year - site_years$min_year <= 1) {
+      next
+    }
+    
+    plot <- create_yearly_noncum_plot(sitename_i)
+    filename <- paste0(sitename_i, "_yearly_noncum.png")
+    
+    # change slashes to dashes to avoid creating new folders
+    filename <- str_replace_all(filename, "/", "-")
+    filepath <- here("data_outputs", "ff_yearly_noncum_plots", filename)
+    ggsave(filename = filepath, plot = plot, width = 8, height = 6)
+  }
+}
+```
+
+
+
+
