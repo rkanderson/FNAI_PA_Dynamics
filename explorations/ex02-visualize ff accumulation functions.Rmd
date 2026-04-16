@@ -204,3 +204,14 @@ ggplot(acres_by_year_region_cumulative, aes(x = year, y = cumulative_total_acres
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ```
+
+
+For explainability: print out a list of all the counties contained in each region, region by region
+
+```{r}
+fl_county_regions %>%
+  group_by(region) %>%
+  summarize(counties = paste(county, collapse = ", ")) %>%
+  ungroup()
+```
+
