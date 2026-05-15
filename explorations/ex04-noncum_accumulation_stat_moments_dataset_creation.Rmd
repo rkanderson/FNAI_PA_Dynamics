@@ -1,0 +1,128 @@
+
+In this notebook, we'll load up the csv version for the non-cumulative plots created in 
+ex03.1
+
+We'll calculate the summary statistical moments for each
+- mean
+- standard deviation
+- skew
+- kurtosis
+
+Later we'll do some clustering to see if we can find any patterns in the data. For now though, let's get these moments and get them
+in a datafile we can use conveniently.
+
+```{r}
+# clear env
+rm(list=ls())
+
+# load libs
+library(tidyverse)
+library(here)
+library(janitor)
+
+# load dataset
+# data_outputs/ff_yearly_noncum_prop_acquired_by_site.csv
+ff_yearly_noncum_prop_acquired_by_site <- read_csv(here("data_outputs", "ff_yearly_noncum_proportion_acquired_by_site.csv")) %>%
+  clean_names()
+
+```
+
+Let's define some helper functions for obtaining statistical moments given a probability function
+
+```{r}
+# function to calculate mean given probability function
+calculate_mean <- function(years, probs) {
+  sum(years * probs)
+}
+
+# function to calculate standard deviation given probability function
+calculate_sd <- function(years, probs) {
+  mean <- calculate_mean(years, probs)
+  sd <- sqrt(sum(probs * (years - mean)^2))
+  return(sd)
+}
+
+# function to calculate skewness given probability function
+calculate_skewness <- function(years, probs) {
+  mean <- calculate_mean(years, probs)
+  sd <- calculate_sd(years, probs)
+  skewness <- sum(probs * ((years - mean) / sd)^3)
+  return(skewness)
+}
+
+# function to calculate kurtosis given probability function
+calculate_kurtosis <- function(years, probs) {
+  mean <- calculate_mean(years, probs)
+  sd <- calculate_sd(years, probs)
+  kurtosis <- sum(probs * ((years - mean) / sd)^4)
+  return(kurtosis)
+}
+
+```
+
+Now let's go through each of the sites and get the moments.
+
+```{r}
+statistical_moments_df <- data.frame(
+  sitename = character(),
+  mean = numeric(),
+  sd = numeric(),
+  skewness = numeric(),
+  kurtosis = numeric(),
+  stringsAsFactors = FALSE
+)
+
+all_sitenames <- unique(ff_yearly_noncum_prop_acquired_by_site$sitename)
+
+
+for(site in all_sitenames) {
+  # get vector of years and vector of probabilities for this site
+  # Note the proportions do not add up to 1 -- since they refer to the 
+  # proportion of the larger project bound yet to be completed. 
+  # So in order to obtain a vector of probabilities, we need to get the total
+  # proportion for the site and normalize by that.
+  site_data <- ff_yearly_noncum_prop_acquired_by_site %>%
+    filter(sitename == site) %>%
+    arrange(year)
+  
+  total_proportion <- sum(site_data$yearly_proportion_acquired, na.rm = TRUE)
+  
+  site_data <- site_data %>% mutate(probability = yearly_proportion_acquired / total_proportion)
+  
+  years <- site_data$year
+  probs <- site_data$probability
+  
+  # # to test, display years and probs vector to console
+  # print(paste("Site:", site))
+  # print("Years:")
+  # print(years)
+  # print("Probs:")
+  # print(probs)
+  # 
+  
+  # calculate moments
+  mean <- calculate_mean(years, probs)
+  sd <- calculate_sd(years, probs)
+  skewness <- calculate_skewness(years, probs)
+  kurtosis <- calculate_kurtosis(years, probs)
+  
+  # add to dataframe
+  statistical_moments_df <- rbind(statistical_moments_df, data.frame(
+    sitename = site,
+    mean = mean,
+    sd = sd,
+    skewness = skewness,
+    kurtosis = kurtosis,
+    stringsAsFactors = FALSE
+  ))
+  
+}
+
+```
+
+
+Let's save as a datafile in data_outputs dir
+
+```{r}
+write_csv(statistical_moments_df, here("data_outputs", "ff_yearly_noncum_statistical_moments_by_site.csv"))
+```
