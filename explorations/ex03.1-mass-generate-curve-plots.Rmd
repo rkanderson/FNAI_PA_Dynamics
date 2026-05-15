@@ -24,6 +24,7 @@ rm(list=ls())
 # Global parameter variables
 GENERATE_CUMULATIVE_PLOTS <- FALSE
 GENERATE_NON_CUMULATIVE_YEARLY_PLOTS <- FALSE
+GENERATE_NON_CUMULATIVE_YEARLY_DATASET <- TRUE
 
 # load libraries
 library(tidyverse)
@@ -224,7 +225,76 @@ if(GENERATE_NON_CUMULATIVE_YEARLY_PLOTS) {
 }
 ```
 
+## Non-cumulative yearly dataset generation
 
+The non cumulative dataset has become of interest. So we're going to write the
+code to export the data from these plots as a datafile that can be worked with.
+
+
+First we'll create a helper function very analagous to the one that generated the plots.
+
+```{r}
+create_yearly_noncum_dataset <- function(sitename_param) {
+  site_data <- ff_joined_with_boundaries %>%
+    filter(sitename == sitename_param)
+  
+  # obtain year-by-year values by grouping by year and summing the proportion acquired for each year
+  site_data_yearly <- site_data %>%
+    group_by(year = lubridate::year(close_date)) %>%
+    summarize(yearly_proportion_acquired = sum(proportion_of_project_acquired, na.rm = TRUE))
+  
+  
+  return(site_data_yearly)
+ 
+}
+```
+
+Now we'll call that function for all the sites, gathering all the dataframes in a list structure.
+
+```{r}
+# create an empty list to store the dataframes
+yearly_noncum_datasets <- list()
+
+# Loop through sitenames, create dataset, and store in list
+if(GENERATE_NON_CUMULATIVE_YEARLY_DATASET) {
+  for (sitename_i in all_sitenames) {
+    # if the number of years spanned by the sitename is less than or equal to 2, skip it
+    
+    # get the max and min years
+    site_years <- ff_joined_with_boundaries %>%
+      filter(sitename == sitename_i) %>%
+      mutate(year = lubridate::year(close_date)) %>%
+      summarize(min_year = min(year, na.rm = TRUE), max_year = max(year, na.rm = TRUE))
+    
+    if (site_years$max_year - site_years$min_year <= 2) {
+      next
+    }
+    
+    dataset <- create_yearly_noncum_dataset(sitename_i)
+    yearly_noncum_datasets[[sitename_i]] <- dataset
+  }
+}
+
+
+```
+
+Now we'll expand that list of small dataframes into a single dataframe with a sitename column to identify which site each row belongs to.
+
+```{r}
+single_unified_noncum_yearly_dataset <- bind_rows(yearly_noncum_datasets, .id = "sitename")
+```
+
+Finally save to disk.
+Let's call the file
+"ff_yearly_noncum_proportion_acquired_by_site.csv"
+```{r}
+if(GENERATE_NON_CUMULATIVE_YEARLY_DATASET) {
+  write_csv(single_unified_noncum_yearly_dataset, here("data_outputs", "ff_yearly_noncum_proportion_acquired_by_site.csv"))
+}
+```
+
+
+So now we can deal with these files as we see fit.
 
 QUICK AUDIT
 To ensure that the clipping occurred properly.
