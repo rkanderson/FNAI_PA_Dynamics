@@ -1,6 +1,5 @@
 
-In this notebook, we'll load up the csv version for the non-cumulative plots created in 
-ex03.1
+In this notebook, we'll load up non cumulative year-by-year acquisition data
 
 We'll calculate the summary statistical moments for each
 - mean
@@ -8,8 +7,6 @@ We'll calculate the summary statistical moments for each
 - skew
 - kurtosis
 
-Later we'll do some clustering to see if we can find any patterns in the data. For now though, let's get these moments and get them
-in a datafile we can use conveniently.
 
 ```{r}
 # clear env
@@ -21,12 +18,63 @@ library(here)
 library(janitor)
 
 # load dataset
-# data_outputs/ff_yearly_noncum_prop_acquired_by_site.csv
-ff_yearly_noncum_prop_acquired_by_site <- read_csv(here("data_outputs", "ff_yearly_noncum_proportion_acquired_by_site.csv")) %>%
+# let's get the joined dataset in which the acquisitions have been associated
+# with their bounding FF BOT projects
+# data_raw/FFBOT_Spatial_Join_Acq-Proj_v3.csv
+
+ff_joined_raw <- read_csv(here("data_raw", "FFBOT_Spatial_Join_Acq-Proj_v3.csv")) %>%
   clean_names()
 
 ```
 
+Let's grab a subset we're interested in
+
+```{r}
+ff_joined_subset <- ff_joined_raw %>%
+  select(close_date, shape_area, sitename) %>%
+  rename(acquisition_acres = shape_area)
+```
+
+And let's also make a nice year field, since we only care about that. 
+(We can actually just throw out the full date field)
+
+```{r}
+# Date format looks like
+# 9/18/2001 0:00:00
+ff_yearly_acquisitions <- ff_joined_subset %>%
+  mutate(year = as.numeric(format(as.Date(close_date, format="%m/%d/%Y %H:%M:%S"), "%Y"))) %>% 
+  select(-close_date)
+```
+
+
+## Obtaining probability functions
+
+For each sitename, we want to get the year-by-year proportion of the total acquisition that was acquired in that year.
+```{r}
+ff_yearly_noncum_prop_acquired_by_site <- ff_yearly_acquisitions %>%
+  group_by(sitename, year) %>%
+  summarise(yearly_acquired = sum(acquisition_acres, na.rm = TRUE)) %>%
+  ungroup() %>%
+  group_by(sitename) %>%
+  mutate(yearly_proportion_acquired = yearly_acquired / sum(yearly_acquired, na.rm = TRUE)) %>%
+  ungroup()
+```
+
+## Num Distinct Years
+
+Great now we have probability functions for each site.
+Because we'll later want to do some filtering based on the number of distinct years thath acquisitions occurred within, let's also get a dataframe 
+that indicates the number of distinct years that acquisitions occurred within for each site.
+
+```{r}
+n_distinct_years_by_site <- ff_yearly_acquisitions %>%
+  group_by(sitename) %>%
+  summarise(n_distinct_years = n_distinct(year)) %>%
+  ungroup()
+```
+
+
+## Statistical Moments Helper Functions
 Let's define some helper functions for obtaining statistical moments given a probability function
 
 ```{r}
@@ -60,76 +108,29 @@ calculate_kurtosis <- function(years, probs) {
 
 ```
 
-Now let's go through each of the sites and get the moments.
+
+## Computing Moments for each Site
+
+Now we can compute the moments for each site using the helper functions we just defined.
 
 ```{r}
-statistical_moments_df <- data.frame(
-  sitename = character(),
-  mean = numeric(),
-  sd = numeric(),
-  skewness = numeric(),
-  kurtosis = numeric(),
-  stringsAsFactors = FALSE
-)
-
-all_sitenames <- unique(ff_yearly_noncum_prop_acquired_by_site$sitename)
-
-
-for(site in all_sitenames) {
-  # get vector of years and vector of probabilities for this site
-  # Note the proportions do not add up to 1 -- since they refer to the 
-  # proportion of the larger project bound yet to be completed. 
-  # So in order to obtain a vector of probabilities, we need to get the total
-  # proportion for the site and normalize by that.
-  site_data <- ff_yearly_noncum_prop_acquired_by_site %>%
-    filter(sitename == site) %>%
-    arrange(year)
-  
-  total_proportion <- sum(site_data$yearly_proportion_acquired, na.rm = TRUE)
-  
-  site_data <- site_data %>% mutate(probability = yearly_proportion_acquired / total_proportion)
-  
-  years <- site_data$year
-  probs <- site_data$probability
-  
-  # # to test, display years and probs vector to console
-  # print(paste("Site:", site))
-  # print("Years:")
-  # print(years)
-  # print("Probs:")
-  # print(probs)
-  # 
-  
-  # calculate moments
-  mean <- calculate_mean(years, probs)
-  sd <- calculate_sd(years, probs)
-  skewness <- calculate_skewness(years, probs)
-  kurtosis <- calculate_kurtosis(years, probs)
-  
-  # add to dataframe
-  statistical_moments_df <- rbind(statistical_moments_df, data.frame(
-    sitename = site,
-    mean = mean,
-    sd = sd,
-    skewness = skewness,
-    kurtosis = kurtosis,
-    stringsAsFactors = FALSE
-  ))
-  
-}
-
-
-
-
-# compute excess_kurtosis (just kurtosis - 3, since normal distribution has kurtosis of 3)
-statistical_moments_df <- statistical_moments_df %>%
-  mutate(excess_kurtosis = kurtosis - 3)
-
+statistical_moments_df <- ff_yearly_noncum_prop_acquired_by_site %>%
+  group_by(sitename) %>%
+  summarise(
+    mean_year = calculate_mean(year, yearly_proportion_acquired),
+    sd_year = calculate_sd(year, yearly_proportion_acquired),
+    skewness_year = calculate_skewness(year, yearly_proportion_acquired),
+    kurtosis_year = calculate_kurtosis(year, yearly_proportion_acquired)
+  ) %>%
+  ungroup() %>%
+  left_join(n_distinct_years_by_site, by = "sitename") # Join with the number of distinct years dataframe to get that info in the same dataframe
 ```
 
 
-Let's save as a datafile in data_outputs dir
+## Saving
+
+Let's save our file in data_outputs with a meaningful name
 
 ```{r}
-write_csv(statistical_moments_df, here("data_outputs", "ff_yearly_noncum_statistical_moments_by_site.csv"))
+write_csv(statistical_moments_df, here("data_outputs", "FFBOT_Site_Statistical_Moments.csv"))
 ```
