@@ -118,6 +118,13 @@ for(site in all_sitenames) {
   
 }
 
+
+
+
+# compute excess_kurtosis (just kurtosis - 3, since normal distribution has kurtosis of 3)
+statistical_moments_df <- statistical_moments_df %>%
+  mutate(excess_kurtosis = kurtosis - 3)
+
 ```
 
 
