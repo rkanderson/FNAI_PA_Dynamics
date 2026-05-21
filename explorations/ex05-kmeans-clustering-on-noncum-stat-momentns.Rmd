@@ -1,0 +1,177 @@
+
+```{r}
+# clear env
+rm(list=ls())
+
+# load libs
+library(tidyverse)
+library(here)
+library(janitor)
+
+# load dataset
+# data_outputs/ff_yearly_noncum_statistical_moments_by_site.csv
+ff_yearly_noncum_statistical_moments_by_site <- read_csv(here("data_outputs", "ff_yearly_noncum_statistical_moments_by_site.csv")) %>%
+  clean_names()
+```
+
+
+
+First we need to normalize our statistical moments data before using them for clustering.
+
+Let's visualize the distributions of each first.
+
+## Visualizing statistical moments
+
+**Mean**
+
+```{r}
+ggplot(ff_yearly_noncum_statistical_moments_by_site, aes(x = mean)) +
+  geom_histogram(bins = 30) +
+  theme_minimal() +
+  labs(title = "Distribution of Mean", x = "Mean", y = "Count")
+```
+**SD**
+
+```{r}
+ggplot(ff_yearly_noncum_statistical_moments_by_site, aes(x = sd)) +
+  geom_histogram(bins = 30) +
+  theme_minimal() +
+  labs(title = "Distribution of SD", x = "SD", y = "Count")
+```
+
+**Skewness**
+
+```{r}
+ggplot(ff_yearly_noncum_statistical_moments_by_site, aes(x = skewness)) +
+  geom_histogram(bins = 30) +
+  theme_minimal() +
+  labs(title = "Distribution of Skewness", x = "Skewness", y = "Count")
+
+```
+**Kurtosis**
+
+```{r}
+ggplot(ff_yearly_noncum_statistical_moments_by_site, aes(x = kurtosis)) +
+  geom_histogram(bins = 30) +
+  theme_minimal() +
+  labs(title = "Distribution of Kurtosis", x = "Kurtosis", y = "Count")
+
+
+```
+
+Ok we've got some crazy crazy outliers for kurtosis and skew
+Both for the same project:
+Etoniah/Cross Florida Greenway Florida Forever BOT Project
+
+These extreme values could warrant some extra investigation.
+
+
+
+For now, let's get the clustering code in here so we have it.
+
+
+## Normalizing the data
+
+Let's obtain z scores
+
+```{r}
+moments_z <- ff_yearly_noncum_statistical_moments_by_site %>%
+  select(mean, sd, skewness, excess_kurtosis) %>%
+  scale() %>%
+  as.data.frame() %>%
+  set_names(c("mean_z", "sd_z", "skewness_z", "exc_kurtosis_z"))
+
+```
+
+
+
+## Clustering
+
+Let's do k-means
+
+```{r}
+set.seed(123) # for reproducibility
+
+k <- 4 # number of clusters
+
+kmeans_result <- kmeans(moments_z, centers = k)
+
+# Add cluster assignments back to original data
+sites_clustered <- ff_yearly_noncum_statistical_moments_by_site %>%
+  mutate(cluster = kmeans_result$cluster)
+
+```
+
+
+## Analyzing clusters
+
+Let's see how the clusters differ in terms of their mean, sd, skewness, and kurtosis
+
+```{r}
+cluster_summary <- sites_clustered %>%
+  group_by(cluster) %>%
+  summarize(
+    mean_mean = mean(mean),
+    mean_sd = mean(sd),
+    mean_skewness = mean(skewness),
+    mean_exc_kurtosis = mean(excess_kurtosis)
+  )
+
+print(cluster_summary)
+```
+
+How can we get a more complete story besides just getting the means of each cluster? The answer of course is to visualize the clusters in a 2D space using PCA or t-SNE. Let's do PCA for now.
+
+```{r}
+# Perform PCA
+pca_result <- prcomp(moments_z, center = TRUE, scale. = TRUE)
+
+# Get PCA scores
+pca_scores <- as.data.frame(pca_result$x) %>%
+  set_names(c("PC1", "PC2", "PC3", "PC4"))
+
+# Add cluster assignments to PCA scores
+pca_scores <- pca_scores %>%
+  mutate(cluster = kmeans_result$cluster)
+
+# Visualize clusters in PCA space
+ggplot(pca_scores, aes(x = PC1, y = PC2, color = factor(cluster))) +
+  geom_point(size = 3) +
+  theme_minimal() +
+  labs(title = "K-means Clusters in PCA Space", x = "Principal Component 1", y = "Principal Component 2", color = "Cluster")
+
+```
+
+```{r}
+# PCA graph with vectors
+pca_loadings <- as.data.frame(pca_result$rotation) %>%
+  set_names(c("PC1", "PC2", "PC3", "PC4")) %>%
+  rownames_to_column(var = "variable")
+
+
+ggplot(pca_scores, aes(x = PC1, y = PC2)) +
+  geom_point(size = 3) +
+  geom_segment(data = pca_loadings, aes(x = 0, y = 0, xend = PC1 * 5, yend = PC2 * 5), arrow = arrow(length = unit(0.2, "cm")), color = "black") +
+  geom_text(data = pca_loadings, aes(x = PC1 * 5, y = PC2 * 5, label = variable), vjust = -0.5) +
+  theme_minimal() +
+  labs(title = "K-means Clusters in PCA Space with Loadings", x = "Principal Component 1", y = "Principal Component 2", color = "Cluster")
+```
+
+
+
+```{r}
+# Scree plot
+pca_var <- pca_result$sdev^2
+
+pca_var_perc <- pca_var / sum(pca_var) * 100
+pca_var_df <- data.frame(PC = paste0("PC", 1:length(pca_var_perc)), Variance = pca_var_perc)
+ggplot(pca_var_df, aes(x = PC, y = Variance)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  theme_minimal() +
+  labs(title = "Scree Plot", x = "Principal Component", y = "Percentage of Variance Explained")
+```
+
+
+
+
+
