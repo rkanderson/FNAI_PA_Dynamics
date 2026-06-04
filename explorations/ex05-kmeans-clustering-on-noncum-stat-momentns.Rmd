@@ -27,13 +27,20 @@ noncum_moments_filtered <- noncum_moments %>%
   filter(n_distinct_years > 2)
 ```
 
-### The CRAZY outiler
+### Dealing with outliers
 
-Dickerson Bay/Bald Point Florida Forever BOT Project
+Manually identified outliers:
+- Dickerson Bay/Bald Point Florida Forever BOT Project
+- Northeast Florida Blueway Florida Forever BOT Project
+- Florida's First Magnitude Springs Florida Forever BOT Project - Manatee Springs
+- Florida Keys Ecosystem Florida Forever BOT Project - Saddlebunch Keys
 
+
+
+Filter them out
 ```{r}
 noncum_moments_filtered <- noncum_moments_filtered %>%
-  filter(sitename != "Dickerson Bay/Bald Point Florida Forever BOT Project")
+  filter(!sitename %in% c("Dickerson Bay/Bald Point Florida Forever BOT Project", "Northeast Florida Blueway Florida Forever BOT Project", "Florida's First Magnitude Springs Florida Forever BOT Project - Manatee Springs", "Florida Keys Ecosystem Florida Forever BOT Project - Saddlebunch Keys"))
 ```
 
 
@@ -61,12 +68,35 @@ pca_result <- prcomp(moments_z, center = TRUE, scale. = TRUE)
 pca_data <- as.data.frame(pca_result$x) %>%
   select(PC1, PC2)
 
-ggplot(pca_data, aes(x = PC1, y = PC2)) +
-  geom_point() +
-  theme_minimal() +
-  labs(title = "PCA of Statistical Moments", x = "Principal Component 1", y = "Principal Component 2")
+pca_data_with_vectors <- as.data.frame(pca_result$x) %>%
+  select(PC1, PC2)
 
+ggplot(pca_data_with_vectors, aes(x = PC1, y = PC2)) +
+  geom_point() +
+  geom_segment(data = as.data.frame(pca_result$rotation) %>%
+                 rownames_to_column("variable") %>%
+                 select(variable, PC1, PC2),
+               aes(x = 0, y = 0, xend = PC1 * 5, yend = PC2 * 5), # scale vectors for better visualization
+               arrow = arrow(length = unit(0.2, "cm")), color = "red") +
+  geom_text(data = as.data.frame(pca_result$rotation) %>%
+              rownames_to_column("variable") %>%
+              select(variable, PC1, PC2),
+            aes(x = PC1 * 5.5, y = PC2 * 5.5, label = variable), color = "red", size = 3) +
+  theme_minimal() +
+  labs(title = "PCA of Statistical Moments with Vectors and Labels", x = "Principal Component 1", y = "Principal Component 2")
 ```
+
+Let's get a scree plot
+
+```{r}
+scree_data <- data.frame(PC = paste0("PC", 1:length(pca_result$sdev)), Variance = pca_result$sdev^2 / sum(pca_result$sdev^2))
+ggplot(scree_data, aes(x = PC, y = Variance)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(title = "Scree Plot", x = "Principal Component", y = "Proportion of Variance Explained")
+```
+
+
 
 ## Clustering (k-means)
 
@@ -95,7 +125,7 @@ There is maybe some signal at k=7?
 Let's use that for now.
 
 ```{r}
-k <- 7 # number of clusters
+k <- 4 # number of clusters
 
 kmeans_result <- kmeans(moments_z, centers = k, nstart = 25)
 # Add cluster assignments back to original data
@@ -122,6 +152,59 @@ ggplot(sites_clustered, aes(x = skewness_year, y = kurtosis_year, color = factor
   scale_x_log10() +
   scale_y_log10()
 ```
+
+### PC Plot with color-coded clusters
+
+Let's see that Principal Component Plot again, but now with color-coded clusters.
+We'll keep the vectors for PCs and all.
+```{r}
+pca_data_with_clusters <- pca_data %>%
+  bind_cols(sites_clustered %>% select(cluster))
+ggplot(pca_data_with_clusters, aes(x = PC1, y = PC2, color = factor(cluster))) +
+  geom_point() +
+  geom_segment(data = as.data.frame(pca_result$rotation) %>%
+                 rownames_to_column("variable") %>%
+                 select(variable, PC1, PC2),
+               aes(x = 0, y = 0, xend = PC1 * 5, yend = PC2 * 5), # scale vectors for better visualization
+               arrow = arrow(length = unit(0.2, "cm")), color = "black") +
+  geom_text(data = as.data.frame(pca_result$rotation) %>%
+              rownames_to_column("variable") %>%
+              select(variable, PC1, PC2),
+            aes(x = PC1 * 5.5, y = PC2 * 5.5, label = variable), color = "black", size = 3) +
+  theme_minimal() +
+  labs(title = "PCA of Statistical Moments with Clusters and Vectors", x = "Principal Component 1", y = "Principal Component 2", color = "Cluster")
+
+# ggplot(pca_data_with_clusters, aes(x = PC1, y = PC2, color = factor(cluster))) +
+#   geom_point() +
+#   theme_minimal() +
+#   labs(title = "PCA of Statistical Moments with Clusters", x = "Principal Component 1", y = "Principal Component 2", color = "Cluster")
+```
+
+Lte's see this exact plot again, but now labeling each dot with the corresponding site
+```{r}
+# first, sitename needs to be added to pca_data_with_clusters
+# we can do this by taking the sitename col from noncum_moments_filtered and adding it to pca_data_with_clusters
+pca_data_with_clusters_with_sites <- pca_data_with_clusters %>%
+  bind_cols(noncum_moments_filtered %>% select(sitename))
+
+ggplot(pca_data_with_clusters_with_sites, aes(x = PC1, y = PC2, color = factor(cluster))) +
+  geom_point() +
+  geom_text(aes(label = sitename), size = 3, vjust = -1) +
+  geom_segment(data = as.data.frame(pca_result$rotation) %>%
+                 rownames_to_column("variable") %>%
+                 select(variable, PC1, PC2),
+               aes(x = 0, y = 0, xend = PC1 * 5, yend = PC2 * 5), # scale vectors for better visualization
+               arrow = arrow(length = unit(0.2, "cm")), color = "black") +
+  geom_text(data = as.data.frame(pca_result$rotation) %>%
+              rownames_to_column("variable") %>%
+              select(variable, PC1, PC2),
+            aes(x = PC1 * 5.5, y = PC2 * 5.5, label = variable), color = "black", size = 3) +
+  theme_minimal() +
+  labs(title = "PCA of Statistical Moments with Clusters and Vectors (Labeled)", x = "Principal Component 1", y = "Principal Component 2", color = "Cluster")
+```
+
+
+
 
 ### LDA
 
@@ -169,7 +252,7 @@ Skewness, Mean, and SD are all closely related. Kurtosis, meanwhile, seems more 
 
 Surprisingly, lower skewness is correlated with lower mean year, the opposite of what one would expect for a normal distribution.
 
-
+## S
 
 
 
