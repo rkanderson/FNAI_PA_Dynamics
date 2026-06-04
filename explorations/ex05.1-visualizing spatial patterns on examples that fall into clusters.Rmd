@@ -1,0 +1,128 @@
+
+
+I randomly chose 3 examples from each of 4 clusters from previous notebook
+
+
+**Cluster 1** (SOUTH)
+- Sand Mountain Florida Forever BOT Project
+- Lake Wales Ridge Ecosystem Florida Forever BOT Project - Carter Creek
+- Brevard Coastal Scrub Ecosystem Florida Forever BOT Project - Scrub Jay Refugia - Valkaria
+- Florida Keys Ecosystem Florida Forever BOT Project - Islamorada/Plantation Key
+
+**Cluster 2** NORTH
+- Brevard Coastal Scrub Ecosystem Florida Forever BOT Project - Grissom Parkway
+- Corkscrew Regional Ecosystem Watershed Florida Forever BOT Project
+- Osceola Pine Savannas Florida Forever BOT Project
+- Wekiva-Ocala Greenway Florida Forever BOT Project - Wekiva-Ocala Connector West
+
+
+**Cluster 3** EAST
+- Garcon Ecosystem Florida Forever BOT Project
+- Rainbow River Corridor Florida Forever BOT Project
+- Red Hills Conservation Florida Forever BOT Project
+- Pumpkin Hill Creek Florida Forever BOT Project
+
+
+**Cluster 4** WEST
+- Middle Chipola River Florida Forever BOT Project
+- Brevard Coastal Scrub Ecosystem Florida Forever BOT Project - Micco Expansion
+- Belle Meade Florida Forever BOT Project
+- Florida Keys Ecosystem Florida Forever BOT Project - Hammocks of the Lower Keys - Big Torch Key
+
+
+Now I'm going to plot the year by year non-cumulative acquired acrage of each of these sites
+
+```{r}
+# clear env
+rm(list=ls())
+
+# load libs
+library(tidyverse)
+library(here)
+
+# load dataset
+ff_joined <- read_csv(here("data_raw", "FFBOT_Spatial_Join_Acq-Proj.csv")) %>% 
+  clean_names()
+
+```
+
+```{r}
+# grab the subset of the data for the 12 sites of interest
+sites_of_interest <- c("Sand Mountain Florida Forever BOT Project",
+                       "Lake Wales Ridge Ecosystem Florida Forever BOT Project - Carter Creek",
+                       "Brevard Coastal Scrub Ecosystem Florida Forever BOT Project - Scrub Jay Refugia - Valkaria",
+                       "Florida Keys Ecosystem Florida Forever BOT Project - Islamorada/Plantation Key",
+                       "Brevard Coastal Scrub Ecosystem Florida Forever BOT Project - Grissom Parkway",
+                       "Corkscrew Regional Ecosystem Watershed Florida Forever BOT Project",
+                       "Osceola Pine Savannas Florida Forever BOT Project",
+                       "Wekiva-Ocala Greenway Florida Forever BOT Project - Wekiva-Ocala Connector West",
+                       "Garcon Ecosystem Florida Forever BOT Project",
+                       "Rainbow River Corridor Florida Forever BOT Project",
+                       "Red Hills Conservation Florida Forever BOT Project",
+                       "Pumpkin Hill Creek Florida Forever BOT Project",
+                       "Middle Chipola River Florida Forever BOT Project",
+                       "Brevard Coastal Scrub Ecosystem Florida Forever BOT Project - Micco Expansion",
+                       "Belle Meade Florida Forever BOT Project",
+                       "Florida Keys Ecosystem Florida Forever BOT Project - Hammocks of the Lower Keys - Big Torch Key")
+
+ff_joined_subset <- ff_joined %>%
+  filter(sitename %in% sites_of_interest) %>%
+  select(close_date, shape_area, sitename) %>%
+  rename(acquisition_acres = shape_area) %>%
+  mutate(year = as.numeric(format(as.Date(close_date, format="%m/%d/%Y %H:%M:%S"), "%Y"))) %>% 
+  select(-close_date)
+```
+
+plot year by year non-cumulative acquired acreage for each site seperately
+
+
+```{r}
+# Define helper function to make a plot for one specific site passed in as a parameter
+# plot_site_acquisition <- function(site_name) {
+#   site_data <- ff_joined_subset %>%
+#     filter(sitename == site_name) %>%
+#     group_by(year) %>%
+#     summarise(yearly_acquired = sum(acquisition_acres, na.rm = TRUE)) %>%
+#     ungroup()
+#   
+#   ggplot(site_data, aes(x = year, y = yearly_acquired)) +
+#     geom_bar(stat = "identity", fill = "steelblue") +
+#     labs(title = site_name, x = "Year", y = "Acres Acquired") +
+#     theme_minimal()
+# }
+
+# Redifene, but ensure that there is exactly one tick on the x axis for each year. One bin per year
+plot_site_acquisition <- function(site_name) {
+  site_data <- ff_joined_subset %>%
+    filter(sitename == site_name) %>%
+    group_by(year) %>%
+    summarise(yearly_acquired = sum(acquisition_acres, na.rm = TRUE)) %>%
+    ungroup()
+  
+  # ggplot(site_data, aes(x = year, y = yearly_acquired)) +
+  #   geom_bar(stat = "identity", fill = "steelblue") +
+  #   scale_x_continuous(breaks = seq(min(site_data$year), max(site_data$year), by = 1)) +
+  #   labs(title = site_name, x = "Year", y = "Acres Acquired") +
+  #   theme_minimal()
+  # 
+  # Rotate Years by 45 degrees
+  ggplot(site_data, aes(x = year, y = yearly_acquired)) +
+    geom_bar(stat = "identity", fill = "steelblue") +
+    scale_x_continuous(breaks = seq(min(site_data$year), max(site_data$year), by = 1)) +
+    labs(title = site_name, x = "Year", y = "Acres Acquired") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+```
+
+```{r}
+# Now we can loop through the sites of interest and make a plot for each one
+for (site in sites_of_interest) {
+  print(plot_site_acquisition(site))
+}
+```
+
+
+
+
+
