@@ -204,6 +204,29 @@ ggplot(pca_data_with_clusters_with_sites, aes(x = PC1, y = PC2, color = factor(c
 ```
 
 
+Let's see that plot again, but only show 10% of the labels
+(Can keep regenerating this to try to see the labels of specific dots in the cluster)
+
+```{r}
+
+pca_data_with_clusters_with_sites_sampled <- pca_data_with_clusters_with_sites %>%
+  sample_frac(0.05) # keep only 10% of the rows (or some other proportion)
+ggplot(pca_data_with_clusters_with_sites_sampled, aes(x = PC1, y = PC2, color = factor(cluster))) +
+  geom_point() +
+  geom_text(aes(label = sitename), size = 3, vjust = -1) +
+  geom_segment(data = as.data.frame(pca_result$rotation) %>%
+                 rownames_to_column("variable") %>%
+                 select(variable, PC1, PC2),
+               aes(x = 0, y = 0, xend = PC1 * 5, yend = PC2 * 5), # scale vectors for better visualization
+               arrow = arrow(length = unit(0.2, "cm")), color = "black") +
+  geom_text(data = as.data.frame(pca_result$rotation) %>%
+              rownames_to_column("variable") %>%
+              select(variable, PC1, PC2),
+            aes(x = PC1 * 5.5, y = PC2 * 5.5, label = variable), color = "black", size = 3) +
+  theme_minimal() +
+  labs(title = "PCA of Statistical Moments with Clusters and Vectors (Labeled Sample)", x = "Principal Component 1", y = "Principal Component 2", color = "Cluster")
+```
+
 
 
 ### LDA
