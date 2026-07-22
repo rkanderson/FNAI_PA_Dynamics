@@ -22,7 +22,12 @@ library(janitor)
 # with their bounding FF BOT projects
 # data_raw/FFBOT_Spatial_Join_Acq-Proj_v3.csv
 
-ff_joined_raw <- read_csv(here("data_raw", "FFBOT_Spatial_Join_Acq-Proj_v3.csv")) %>%
+# ff_joined_raw <- read_csv(here("data_raw", "FFBOT_Spatial_Join_Acq-Proj.csv")) %>%
+#   clean_names()
+
+# Let's use the intersection dataset actually
+# data_raw/ff_acquired_simppoly_intersect.xlsx
+ff_joined_raw <- read_excel(here("data_raw", "ff_acquired_simppoly_intersect.xlsx")) %>%
   clean_names()
 
 ```
