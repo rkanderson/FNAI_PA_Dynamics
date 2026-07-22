@@ -143,15 +143,56 @@ ggplot(sites_clustered, aes(x = mean_year, y = sd_year, color = factor(cluster))
   labs(title = "Clusters of Sites Based on Mean and SD", x = "Mean", y = "SD", color = "Cluster")
 ```
 
+
 ```{r}
 
 ggplot(sites_clustered, aes(x = skewness_year, y = kurtosis_year, color = factor(cluster))) +
   geom_point() +
   theme_minimal() +
-  labs(title = "Clusters of Sites Based on Skewness and Kurtosis (Log Scale)", x = "Skewness", y = "Kurtosis", color = "Cluster") +
-  scale_x_log10() +
-  scale_y_log10()
+  labs(title = "Clusters of Sites Based on Skewness and Kurtosis", x = "Skewness", y = "Kurtosis", color = "Cluster")
+
+# ggplot(sites_clustered, aes(x = skewness_year, y = kurtosis_year, color = factor(cluster))) +
+#   geom_point() +
+#   theme_minimal() +
+#   labs(title = "Clusters of Sites Based on Skewness and Kurtosis (Log Scale)", x = "Skewness", y = "Kurtosis", color = "Cluster") +
+#   scale_x_log10() +
+#   scale_y_log10()
+
+
 ```
+
+Let's also get plots that compare other combos
+
+Like mean vs skewness, mean vs kurtosis, sd vs skewness, sd vs kurtosis
+
+```{r}
+ggplot(sites_clustered, aes(x = mean_year, y = skewness_year, color = factor(cluster))) +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Clusters of Sites Based on Mean and Skewness", x = "Mean", y = "Skewness", color = "Cluster")
+```
+
+```{r}
+ggplot(sites_clustered, aes(x = mean_year, y = kurtosis_year, color = factor(cluster))) +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Clusters of Sites Based on Mean and Kurtosis", x = "Mean", y = "Kurtosis", color = "Cluster")
+```
+
+```{r}
+ggplot(sites_clustered, aes(x = sd_year, y = skewness_year, color = factor(cluster))) +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Clusters of Sites Based on SD and Skewness", x = "SD", y = "Skewness", color = "Cluster")
+```
+
+```{r}
+ggplot(sites_clustered, aes(x = sd_year, y = kurtosis_year, color = factor(cluster))) +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Clusters of Sites Based on SD and Kurtosis", x = "SD", y = "Kurtosis", color = "Cluster")
+```
+
 
 ### PC Plot with color-coded clusters
 
