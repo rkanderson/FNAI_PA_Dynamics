@@ -32,9 +32,18 @@ library(readxl)
 ```{r}
 # Load Data
 #data_raw/FFBOT_Spatial_Join_Acq-Proj.xlsx
-ff_joined <- read_excel(here("data_raw", "FFBOT_Spatial_Join_Acq-Proj.xls")) %>%
+# ff_joined <- read_excel(here("data_raw", "FFBOT_Spatial_Join_Acq-Proj.csv")) %>%
+#   clean_names()
+
+## Read the CSV
+ff_joined <- read_csv(here("data_raw", "FFBOT_Spatial_Join_Acq-Proj.csv")) %>%
   clean_names()
 ```
+
+```{r}
+ff_joined %>% colnames()
+```
+
 
 **Column Names**
 
@@ -68,11 +77,8 @@ Let's just select the previously mentioned fields and then rename them to unambi
 
 ```{r}
 ff_joined_selected <- ff_joined %>%
-  select(id, site_id, acres, gis_acres, close_date, shape_area) %>%
-  rename(acquisition_acres = acres,
-         project_boundary_acres = gis_acres,
-         acquisition_id = id,
-         project_id = site_id)
+  select(id, site_id, acres, gis_acres, close_date, shape_area)
+
 
 ```
 
