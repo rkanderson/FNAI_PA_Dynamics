@@ -23,7 +23,7 @@ rm(list=ls())
 
 # Global parameter variables
 GENERATE_CUMULATIVE_PLOTS <- FALSE
-GENERATE_NON_CUMULATIVE_YEARLY_PLOTS <- FALSE
+GENERATE_NON_CUMULATIVE_YEARLY_PLOTS <- TRUE
 GENERATE_NON_CUMULATIVE_YEARLY_DATASET <- TRUE
 
 # load libraries
@@ -42,11 +42,20 @@ library(readxl)
 # ff_joined <- read_excel(here("data_raw", "FFBOT_Spatial_Join_Acq-Proj_v2.xls")) %>%
   # clean_names()
 
-ff_joined <- read_csv(here("data_raw", "FFBOT_Spatial_Join_Acq-Proj_v3.csv")) %>% 
+# ff_joined <- read_csv(here("data_raw", "FFBOT_Spatial_Join_Acq-Proj.csv")) %>% 
+#   clean_names()
+
+# Let's try the intersect one instead actually
+# data_raw/ff_acquired_simppoly_intersect.xlsx
+ff_joined <- read_excel(here("data_raw", "ff_acquired_simppoly_intersect.xlsx")) %>%
   clean_names()
 
 # Let's load up the ffbot dataset
-ff_projects <- read_csv(here("data_raw", "FNAI_Spatial_Data_Attr_Tables", "ffbot_2025_12.csv")) %>%
+# ff_projects <- read_csv(here("data_raw", "FNAI_Spatial_Data_Attr_Tables", "ffbot_2025_12.csv")) %>%
+#   clean_names()
+
+# xls... ffbot_2026_04.xls
+ff_projects <- read_excel(here("data_raw", "FNAI_Spatial_Data_Attr_Tables", "ffbot_2026_04.xls")) %>%
   clean_names()
 ```
 
@@ -202,7 +211,7 @@ test_yearly_noncum_plot
 if(GENERATE_NON_CUMULATIVE_YEARLY_PLOTS) {
   for (sitename_i in all_sitenames) {
     # if the number of years spanned by the sitename is less than or equal to 2, skip it
-    # ie if the difference between the max year and min year is less than or equal to 0 or 1, skip it
+    # ie if the difference between the max year and min year is equal to 0 or 1, skip it
     
     # get the max and min years
     site_years <- ff_joined_with_boundaries %>%
@@ -258,17 +267,23 @@ yearly_noncum_datasets <- list()
 # Loop through sitenames, create dataset, and store in list
 if(GENERATE_NON_CUMULATIVE_YEARLY_DATASET) {
   for (sitename_i in all_sitenames) {
-    # if the number of years spanned by the sitename is less than or equal to 2, skip it
-    
+
     # get the max and min years
     site_years <- ff_joined_with_boundaries %>%
       filter(sitename == sitename_i) %>%
-      mutate(year = lubridate::year(close_date)) %>%
-      summarize(min_year = min(year, na.rm = TRUE), max_year = max(year, na.rm = TRUE))
+      mutate(year = lubridate::year(close_date))
     
-    if (site_years$max_year - site_years$min_year <= 2) {
+      # 
+      # summarize(min_year = min(year, na.rm = TRUE), max_year = max(year, na.rm = TRUE))
+    
+    # Skip generating the plot if the number of distinct years in which an 
+    # acquisition ocurred represented 
+    # is fewer than or equal to 2
+    # use functions to get ndistinct() in the year fields
+    if (n_distinct(site_years$year) <= 2) {
       next
     }
+    
     
     dataset <- create_yearly_noncum_dataset(sitename_i)
     yearly_noncum_datasets[[sitename_i]] <- dataset
@@ -308,11 +323,12 @@ max_cumulative_proportion <- ff_joined_with_boundaries %>%
   summarize(max_cumulative_proportion_acquired = max(cumulative_proportion_acquired, na.rm = TRUE)) %>%
   arrange(desc(max_cumulative_proportion_acquired))
 
+PROBLEMATIC_SITES <- max_cumulative_proportion %>%
+  filter(max_cumulative_proportion_acquired > 1)
+
 ```
 
-Consider sitename="Strategic Managed Area Lands List Florida Forever BOT Project - DRP-12"
-About 300% coverage
-Row 6773
+
 
 
 
