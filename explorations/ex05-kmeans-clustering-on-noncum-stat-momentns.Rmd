@@ -8,6 +8,13 @@ library(tidyverse)
 library(here)
 library(janitor)
 
+
+SAVE_CLUSTER_RESULTS <- FALSE
+
+```
+
+
+```{r}
 # load dataset
 # data_outputs/FFBOT_Site_Statistical_Moments.csv
 noncum_moments <- read_csv(here("data_outputs", "FFBOT_Site_Statistical_Moments.csv")) %>%
@@ -27,20 +34,68 @@ noncum_moments_filtered <- noncum_moments %>%
   filter(n_distinct_years > 2)
 ```
 
+### Identifying outliers
+
+```{r}
+# noncum_moments_filtered <- noncum_moments_filtered %>%
+#   filter(sitename != "St. Joe Timberland Florida Forever BOT Project - Wakulla Springs Protection Zone")
+```
+
+
+Let's get a list of outliers for each of the 4 moments we've calculated
+mean_year, sd_year, skewness_year, kurtosis_year
+
+**Mean Year Outliers**
+```{r}
+# get outliers for mean_year
+noncum_moments_filtered %>%
+  filter(mean_year > mean(mean_year) + 2 * sd(mean_year) | mean_year < mean(mean_year) - 2 * sd(mean_year)) %>%
+  select(sitename, mean_year)
+```
+
+**SD Year OUtliers**
+```{r}
+noncum_moments_filtered %>%
+  filter(sd_year > mean(sd_year) + 2 * sd(sd_year) | sd_year < mean(sd_year) - 2 * sd(sd_year)) %>%
+  select(sitename, sd_year)
+```
+
+**Skewness Outilers**
+```{r}
+noncum_moments_filtered %>%
+  filter(skewness_year > mean(skewness_year) + 2 * sd(skewness_year) | skewness_year < mean(skewness_year) - 2 * sd(skewness_year)) %>%
+  select(sitename, skewness_year)
+
+```
+
+**Kurtossis Outliers**
+```{r}
+noncum_moments_filtered %>%
+  filter(kurtosis_year > mean(kurtosis_year) + 2 * sd(kurtosis_year) | kurtosis_year < mean(kurtosis_year) - 2 * sd(kurtosis_year)) %>%
+  select(sitename, kurtosis_year)
+```
+
+
+
 ### Dealing with outliers
 
-Manually identified outliers:
-- Dickerson Bay/Bald Point Florida Forever BOT Project
-- Northeast Florida Blueway Florida Forever BOT Project
-- Florida's First Magnitude Springs Florida Forever BOT Project - Manatee Springs
-- Florida Keys Ecosystem Florida Forever BOT Project - Saddlebunch Keys
 
+
+Identified Outliers:
+
+
+St. Joe Timberland Florida Forever BOT Project - Wakulla Springs Protection Zone
+Florida's First Magnitude Springs Florida Forever BOT Project - Manatee Springs
+Northeast Florida Blueway Florida Forever BOT Project
 
 
 Filter them out
 ```{r}
 noncum_moments_filtered <- noncum_moments_filtered %>%
-  filter(!sitename %in% c("Dickerson Bay/Bald Point Florida Forever BOT Project", "Northeast Florida Blueway Florida Forever BOT Project", "Florida's First Magnitude Springs Florida Forever BOT Project - Manatee Springs", "Florida Keys Ecosystem Florida Forever BOT Project - Saddlebunch Keys"))
+  filter(!sitename %in% c("St. Joe Timberland Florida Forever BOT Project - Wakulla Springs Protection Zone",
+                          "Florida's First Magnitude Springs Florida Forever BOT Project - Manatee Springs",
+                          "Northeast Florida Blueway Florida Forever BOT Project"))
+
 ```
 
 
@@ -221,7 +276,9 @@ ggplot(pca_data_with_clusters, aes(x = PC1, y = PC2, color = factor(cluster))) +
 #   labs(title = "PCA of Statistical Moments with Clusters", x = "Principal Component 1", y = "Principal Component 2", color = "Cluster")
 ```
 
-Lte's see this exact plot again, but now labeling each dot with the corresponding site
+## Seeing site labels
+
+Let's see this exact plot again, but now labeling each dot with the corresponding site
 ```{r}
 # first, sitename needs to be added to pca_data_with_clusters
 # we can do this by taking the sitename col from noncum_moments_filtered and adding it to pca_data_with_clusters
@@ -316,8 +373,27 @@ Skewness, Mean, and SD are all closely related. Kurtosis, meanwhile, seems more 
 
 Surprisingly, lower skewness is correlated with lower mean year, the opposite of what one would expect for a normal distribution.
 
-## S
+## Save Clustering Results
+Let's save our cluster results as a dataframe so that we can use them in other scripts.
 
+We already have a dataset that has all the statistical momentns (that's what we had loaded in at the start of the script)
+
+So it would make sense for us to save a dataset that only consists of the cluster assignments paired with the primary keys for the sites (the sitenames)
+
+```{r}
+# write to data_outputs/ffbot_sites_clustered
+
+if(SAVE_CLUSTER_RESULTS) {
+
+  save_path <- here::here("data_outputs", "ffbot_sites_clustered.csv")
+  
+  sites_clustered %>% select(sitename, cluster) %>%
+    write_csv(save_path)
+
+}
+  
+
+```
 
 
 
